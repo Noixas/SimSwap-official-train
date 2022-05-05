@@ -26,7 +26,7 @@ from util.plot import plot_batch
 
 from models.projected_model import fsModel
 from data.data_loader_Swapping import GetLoader
-
+import wandb
 def str2bool(v):
     return v.lower() in ('true')
 
@@ -129,7 +129,9 @@ if __name__ == '__main__':
     os.environ['CUDA_VISIBLE_DEVICES'] = str(opt.gpu_ids)
     print("GPU used : ", str(opt.gpu_ids))
 
-    
+    wandb.init(project="master-thesis")
+    # opt = TrainOptions().parse()
+    wandb.config.update(opt)
     cudnn.benchmark = True
 
     
@@ -201,8 +203,7 @@ if __name__ == '__main__':
                 optimizer_D.zero_grad()
                 loss_D.backward()
                 optimizer_D.step()
-            else:
-                
+            else:                
                 # model.netD.requires_grad_(True)
                 img_fake        = model.netG(src_image1, latent_id)
                 # G loss
@@ -242,6 +243,8 @@ if __name__ == '__main__':
                 "D_real":loss_Dreal.item(),
                 "D_loss":loss_D.item()
             }
+            wandb.log(errors) 
+
             if opt.use_tensorboard:
                 for tag, value in errors.items():
                     logger.add_scalar(tag, value, step)
@@ -280,6 +283,8 @@ if __name__ == '__main__':
                         imgs.append(img_fake[j,...])
                 print("Save test data")
                 imgs = np.stack(imgs, axis = 0).transpose(0,2,3,1)
+                # images_output_wandb = wandb.Image(imgs, caption="Output images")         
+                # wandb.log({"images_sample": images_output_wandb})
                 plot_batch(imgs, os.path.join(sample_path, 'step_'+str(step+1)+'.jpg'))
 
         ### save latest model
@@ -288,3 +293,7 @@ if __name__ == '__main__':
             model.save(step+1)            
             np.savetxt(iter_path, (step+1, total_step), delimiter=',', fmt='%d')
     wandb.finish()
+
+# python train.py --name simswap224_test --batchSize 16  --gpu_ids 0 --dataset ../vggface2_crop_arcfacealign_224 --Gdeep False 
+# python train.py --name simswap224_test --batchSize 16  --gpu_ids 0 --dataset /home/astro/Documents/UvA/Thesis/vggface2_crop_arcfacealign_224 --Gdeep False  #SSD!!
+# python train.py --name simswap224_test --batchSize 16  --gpu_ids 0 --dataset /home/astro/Documents/UvA/Thesis/vggface2_crop_arcfacealign_224 --Gdeep False --which_epoch 290000 --continue_train True

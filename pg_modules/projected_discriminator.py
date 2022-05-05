@@ -129,7 +129,7 @@ class MultiScaleD(nn.Module):
         # the first disc is on the lowest level of the backbone
         self.disc_in_channels = channels[:num_discs]
         self.disc_in_res = resolutions[:num_discs]
-        Disc = SingleDiscCond if cond else SingleDisc
+        Disc = SingleDiscCond if cond else SingleDisc #false
 
         mini_discs = []
         for i, (cin, res) in enumerate(zip(self.disc_in_channels, self.disc_in_res)):

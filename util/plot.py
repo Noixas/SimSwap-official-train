@@ -35,3 +35,7 @@ def plot_batch(X, out_path):
     canvas = tile(X, rows, cols)
     canvas = np.squeeze(canvas)
     PIL.Image.fromarray(canvas).save(out_path)
+    images_output_wandb = wandb.Image(canvas, caption="Output images")      
+    wandb.log({"images_sample": images_output_wandb})
+
+import wandb
