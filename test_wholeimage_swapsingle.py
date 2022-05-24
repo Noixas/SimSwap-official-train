@@ -14,7 +14,6 @@ import numpy as np
 from PIL import Image
 import torch.nn.functional as F
 from torchvision import transforms
-from models.models import create_model
 from options.test_options import TestOptions
 from insightface_func.face_detect_crop_single import Face_detect_crop
 from util.reverse2original import reverse2wholeimage
@@ -22,6 +21,12 @@ import os
 from util.add_watermark import watermark_image
 from util.norm import SpecificNorm
 from parsing_model.model import BiSeNet
+import wandb
+from models.projected_model import fsModel
+
+
+import warnings
+warnings.filterwarnings("ignore")
 
 def lcm(a, b): return abs(a * b) / fractions.gcd(a, b) if a and b else 0
 
@@ -34,9 +39,15 @@ def _totensor(array):
     tensor = torch.from_numpy(array)
     img = tensor.transpose(0, 1).transpose(0, 2).contiguous()
     return img.float().div(255)
-if __name__ == '__main__':
-    opt = TestOptions().parse()
 
+def str2bool(v):
+    return v.lower() in ('true')
+if __name__ == '__main__':
+    opt = TestOptions()
+    opt.parser.add_argument('--Gdeep', type=str2bool, default='False')
+    opt.parser.add_argument('--transf', type=str2bool, default='False')
+
+    opt = opt.parse()
     start_epoch, epoch_iter = 1, 0
     crop_size = opt.crop_size
 
@@ -48,10 +59,12 @@ if __name__ == '__main__':
     else:
         mode = 'None'
     logoclass = watermark_image('./simswaplogo/simswaplogo.png')
-    model = create_model(opt)
+    model = fsModel()
+
+    model.initialize(opt)
     model.eval()
 
-    spNorm =SpecificNorm()
+    spNorm =SpecificNorm() 
     app = Face_detect_crop(name='antelope', root='./insightface_func/models')
     app.prepare(ctx_id= 0, det_thresh=0.6, det_size=(640,640),mode=mode)
 
@@ -83,16 +96,31 @@ if __name__ == '__main__':
         swap_result_list = []
 
         b_align_crop_tenor_list = []
-
+        mean = torch.tensor([0.485, 0.456, 0.406]).cuda().view(1,3,1,1)
+        std = torch.tensor([0.229, 0.224, 0.225]).cuda().view(1,3,1,1)
         for b_align_crop in img_b_align_crop_list:
 
-            b_align_crop_tenor = _totensor(cv2.cvtColor(b_align_crop,cv2.COLOR_BGR2RGB))[None,...].cuda()
-
-            swap_result = model(None, b_align_crop_tenor, latend_id, None, True)[0]
+            # b_align_crop_tenor = _totensor(cv2.cvtColor(b_align_crop,cv2.COLOR_BGR2RGB))[None,...].cuda()
+            #New
+            img_tensor = transforms.ToTensor()(cv2.cvtColor(b_align_crop,cv2.COLOR_BGR2RGB)).cuda(non_blocking=True) 
+            img_tensor = img_tensor.view(-1, 3, 224,224)   #HARDCODED
+            b_align_crop_tenor =  img_tensor.sub_(mean).div_(std)
+            
+            swap_result = model.netG(b_align_crop_tenor, latend_id)
+            swap_result = swap_result.mul_(std).add_(mean)
+            # torch.clip
+            # print(torch.max(swap_result))
+            # print(torch.min(swap_result))
+            # swap_result = torch.clip(255 * swap_result, 0, 255)
+            # swap_result = swap_result.to(torch.uint8)
+            # x = torch.cast[np.uint8](x)
+            # swap_result = swap_result[0]
+            # swap_result = swap_result + mean
+            # b_align_crop_tenor = (b_align_crop_tenor * std)+mean
             swap_result_list.append(swap_result)
             b_align_crop_tenor_list.append(b_align_crop_tenor)
 
-        if opt.use_mask:
+        if False and opt.use_mask:
             n_classes = 19
             net = BiSeNet(n_classes=n_classes)
             net.cuda()
@@ -101,10 +129,13 @@ if __name__ == '__main__':
             net.eval()
         else:
             net =None
-
+        print(swap_result[0].shape)
+        import PIL
+        # PIL.Image.fromarray(swap_result[0].cpu().numpy()).save(os.path.join(opt.output_path, 'result_whole_swapsingle_cropped.jpg'))
+        # cv2.imwrite(os.path.join(opt.output_path, 'result_whole_swapsingle_cropped.jpg'), swap_result[0].cpu().numpy())
         reverse2wholeimage(b_align_crop_tenor_list, swap_result_list, b_mat_list, crop_size, img_b_whole, logoclass, \
-            os.path.join(opt.output_path, 'result_whole_swapsingle.jpg'), opt.no_simswaplogo,pasring_model =net,use_mask=opt.use_mask, norm = spNorm)
+            os.path.join(opt.output_path, 'result_whole_swapsingle.jpg'), no_simswaplogo = True, pasring_model =net,use_mask=opt.use_mask, norm = spNorm)
 
         print(' ')
-
+        print('Output: ',os.path.join(opt.output_path, 'result_whole_swapsingle.jpg'))
         print('************ Done ! ************')

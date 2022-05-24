@@ -25,19 +25,23 @@ Face = collections.namedtuple('Face', [
 ])
 
 Face.__new__.__defaults__ = (None, ) * len(Face._fields)
-
+# import torch
 
 class Face_detect_crop:
-    def __init__(self, name, root='~/.insightface_func/models'):
+    def __init__(self, name, root='~/.insightface_func/models',cuda_device = 0):
         self.models = {}
+
+        # torch.cuda.set_device(1)
         root = os.path.expanduser(root)
         onnx_files = glob.glob(osp.join(root, name, '*.onnx'))
         onnx_files = sorted(onnx_files)
+        kwargs = {'providers':[('CUDAExecutionProvider',{'device_id': cuda_device}), 'CPUExecutionProvider']}
+        # print(kwargs)
         for onnx_file in onnx_files:
             if onnx_file.find('_selfgen_')>0:
                 #print('ignore:', onnx_file)
                 continue
-            model = model_zoo.get_model(onnx_file)
+            model = model_zoo.get_model(onnx_file,**kwargs)
             if model.taskname not in self.models:
                 print('find model:', onnx_file, model.taskname)
                 self.models[model.taskname] = model

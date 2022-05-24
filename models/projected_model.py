@@ -13,7 +13,7 @@
 
 import torch
 import torch.nn as nn
-
+import wandb
 from .base_model import BaseModel
 from .fs_networks_fix import Generator_Adain_Upsample
 
@@ -38,32 +38,38 @@ class fsModel(BaseModel):
         BaseModel.initialize(self, opt)
         # if opt.resize_or_crop != 'none' or not opt.isTrain:  # when training at full res this causes OOM
         self.isTrain = opt.isTrain
-
+        torch.cuda.set_device(int(opt.gpu_ids[0]))
         # Generator network
-        self.netG = Generator_Adain_Upsample(input_nc=3, output_nc=3, latent_size=512, n_blocks=9, deep=opt.Gdeep)
-        self.netG.cuda()
+        self.netG = Generator_Adain_Upsample(input_nc=3, output_nc=3, latent_size=512, n_blocks=9, deep=opt.Gdeep, transf=opt.transf)
+        self.netG.cuda(int(opt.gpu_ids[0]))
+        # wandb.watch(self.netG )
+        print('================  Generator Architecture ================')
+        print( self.netG)
+        print('=========================================================')
 
         # Id network
         netArc_checkpoint = opt.Arc_path
         netArc_checkpoint = torch.load(netArc_checkpoint, map_location=torch.device("cpu"))
         self.netArc = netArc_checkpoint['model'].module
-        self.netArc = self.netArc.cuda()
+        self.netArc = self.netArc.cuda(int(opt.gpu_ids[0]))
         self.netArc.eval()
         self.netArc.requires_grad_(False)
+
+        print(torch.cuda.current_device())
+        print(torch.cuda.get_device_name(int(opt.gpu_ids[0])))
         if not self.isTrain:
             pretrained_path =  opt.checkpoints_dir
             self.load_network(self.netG, 'G', opt.which_epoch, pretrained_path)
             return
         self.netD = ProjectedDiscriminator(diffaug=False, interp224=False, **{})
         # self.netD.feature_network.requires_grad_(False)
-        self.netD.cuda()
+        self.netD.cuda(int(opt.gpu_ids[0]))
 
 
         if self.isTrain:
             # define loss functions
             self.criterionFeat  = nn.L1Loss()
             self.criterionRec   = nn.L1Loss()
-
 
            # initialize optimizers
 

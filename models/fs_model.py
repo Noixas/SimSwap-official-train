@@ -56,9 +56,9 @@ class fsModel(BaseModel):
             from .fs_networks_512 import Generator_Adain_Upsample, Discriminator
 
         # Generator network
-        self.netG = Generator_Adain_Upsample(input_nc=3, output_nc=3, latent_size=512, n_blocks=9, deep=False)
+        self.netG = Generator_Adain_Upsample(input_nc=3, output_nc=3, latent_size=512, n_blocks=9, deep=False,transf=opt.transf)
         self.netG.to(device)
-
+        
 
 
 

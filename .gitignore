@@ -140,3 +140,6 @@ checkpoints/
 *.pth
 *.onnx
 wandb/
+demo_file/
+
+output/

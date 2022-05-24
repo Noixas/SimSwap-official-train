@@ -27,6 +27,10 @@ from util.plot import plot_batch
 from models.projected_model import fsModel
 from data.data_loader_Swapping import GetLoader
 import wandb
+import warnings
+import os
+
+warnings.filterwarnings("ignore")
 def str2bool(v):
     return v.lower() in ('true')
 
@@ -50,7 +54,7 @@ class TrainOptions:
         # for training
         self.parser.add_argument('--dataset', type=str, default="/path/to/VGGFace2", help='path to the face swapping dataset')
         self.parser.add_argument('--continue_train', type=str2bool, default='False', help='continue training: load the latest model')
-        self.parser.add_argument('--load_pretrain', type=str, default='./checkpoints/simswap224_test', help='load the pretrained model from the specified location')
+        self.parser.add_argument('--load_pretrain', type=str, default='./checkpoints/xxxx', help='load the pretrained model from the specified location')
         self.parser.add_argument('--which_epoch', type=str, default='10000', help='which epoch to load? set to latest to use latest cached model')
         self.parser.add_argument('--phase', type=str, default='train', help='train, val, test, etc')
         self.parser.add_argument('--niter', type=int, default=10000, help='# of iter at starting learning rate')
@@ -70,7 +74,10 @@ class TrainOptions:
         self.parser.add_argument("--sample_freq", type=int, default=1000, help='frequence for sampling')
         self.parser.add_argument("--model_freq", type=int, default=10000, help='frequence for saving the model')
 
-        
+        #transformer
+        self.parser.add_argument('--transf', type=str2bool, default='False')
+        self.parser.add_argument('--notes', type=str, default='', help='Add notes to the wandb run')
+
 
 
         self.isTrain = True
@@ -129,17 +136,19 @@ if __name__ == '__main__':
     os.environ['CUDA_VISIBLE_DEVICES'] = str(opt.gpu_ids)
     print("GPU used : ", str(opt.gpu_ids))
 
-    wandb.init(project="master-thesis")
+    wandb.init(project="master-thesis",entity='ir2',save_code=True,tags=["transformer"],notes=opt.name + ' ' + opt.notes)
     # opt = TrainOptions().parse()
     wandb.config.update(opt)
     cudnn.benchmark = True
 
+    if opt.transf:
+        print('================ Transformers mode active ================\n')
     
 
     model = fsModel()
 
     model.initialize(opt)
-
+    # print(model)
     #####################################################
     if opt.use_tensorboard:
         tensorboard_writer  = tensorboard.SummaryWriter(log_path)
@@ -176,12 +185,29 @@ if __name__ == '__main__':
     model.netD.feature_network.requires_grad_(False)
 
     # Training Cycle
+    # Per each step
+        # Do 2 passes:
+            #Generate image
+                    # if step%2==0
+                        # Src and target image are the same
+                    # else
+                        # Src and target image are different (FACESWAP)
+            # interval                 
+                #Get discriminator loss 
+                #Update discriminator
+            # no interval
+                #Get generator loss 
+                #Update generator
+
+                    
     for step in range(start, total_step):
+        # print("=========Start of step %i train======="%step )
         model.netG.train()
         for interval in range(2):
+            # print("---Interval:", interval)
             random.shuffle(randindex)
             src_image1, src_image2  = train_loader.next()
-            
+            # print("step%2==", step%2)
             if step%2 == 0:
                 img_id = src_image2
             else:
@@ -190,8 +216,8 @@ if __name__ == '__main__':
             img_id_112      = F.interpolate(img_id,size=(112,112), mode='bicubic')
             latent_id       = model.netArc(img_id_112)
             latent_id       = F.normalize(latent_id, p=2, dim=1)
-            if interval:
-                
+            if  interval: #when interval is 1 instead of 0
+                # print("Interval: True")
                 img_fake        = model.netG(src_image1, latent_id)
                 gen_logits,_    = model.netD(img_fake.detach(), None)
                 loss_Dgen       = (F.relu(torch.ones_like(gen_logits) + gen_logits)).mean()
@@ -203,7 +229,9 @@ if __name__ == '__main__':
                 optimizer_D.zero_grad()
                 loss_D.backward()
                 optimizer_D.step()
-            else:                
+            else:            
+                # print("Interval: False")
+    
                 # model.netD.requires_grad_(True)
                 img_fake        = model.netG(src_image1, latent_id)
                 # G loss
@@ -217,17 +245,22 @@ if __name__ == '__main__':
                 real_feat       = model.netD.get_feature(src_image1)
                 feat_match_loss = model.criterionFeat(feat["3"],real_feat["3"]) 
                 loss_G          = loss_Gmain + loss_G_ID * opt.lambda_id + feat_match_loss * opt.lambda_feat
+                # loss_G          =  feat_match_loss * 0.00001 #opt.lambda_feat
                 
 
                 if step%2 == 0:
+                    # print("step%2 == 0 is True")
                     #G_Rec
                     loss_G_Rec  = model.criterionRec(img_fake, src_image1) * opt.lambda_rec
                     loss_G      += loss_G_Rec
-
+                    # optimizer_G.zero_grad()
+                    # loss_G.backward()
+                    # optimizer_G.step()
+                
                 optimizer_G.zero_grad()
                 loss_G.backward()
                 optimizer_G.step()
-                
+        # print("=========END =======" )
 
         ############## Display results and errors ##########
         ### print out errors
@@ -243,7 +276,7 @@ if __name__ == '__main__':
                 "D_real":loss_Dreal.item(),
                 "D_loss":loss_D.item()
             }
-            wandb.log(errors) 
+            wandb.log(errors,step=step) 
 
             if opt.use_tensorboard:
                 for tag, value in errors.items():
@@ -297,3 +330,15 @@ if __name__ == '__main__':
 # python train.py --name simswap224_test --batchSize 16  --gpu_ids 0 --dataset ../vggface2_crop_arcfacealign_224 --Gdeep False 
 # python train.py --name simswap224_test --batchSize 16  --gpu_ids 0 --dataset /home/astro/Documents/UvA/Thesis/vggface2_crop_arcfacealign_224 --Gdeep False  #SSD!!
 # python train.py --name simswap224_test --batchSize 16  --gpu_ids 0 --dataset /home/astro/Documents/UvA/Thesis/vggface2_crop_arcfacealign_224 --Gdeep False --which_epoch 290000 --continue_train True
+# python train.py --name transf_04_simswap224 --batchSize 16  --gpu_ids 0 --dataset /home/astro/Documents/UvA/Thesis/vggface2_crop_arcfacealign_224 --Gdeep False --transf True # Without pretraining swin 
+# CUDA_VISIBLE_DEVICES=1  python train.py --name transf_05_simswap224 --batchSize 6  --gpu_ids 0 --dataset /home/astro/Documents/UvA/Thesis/vggface2_crop_arcfacealign_224 --Gdeep False --transf True # Run with pretrained swin model
+# CUDA_VISIBLE_DEVICES=0 python train.py --name transf_06_imswap224 --batchSize 16  --gpu_ids 0 --dataset /home/astro/Documents/UvA/Thesis/vggface2_crop_arcfacealign_224 --Gdeep False --transf True --lambda_rec 20 --lambda_id 20 # improve reconstruction loss
+# CUDA_VISIBLE_DEVICES=1 python train.py --name transf_07_imswap224 --batchSize 6  --gpu_ids 0 --dataset /home/astro/Documents/UvA/Thesis/vggface2_crop_arcfacealign_224 --Gdeep False --transf True #pixelshuffle instead of upsample layer
+# CUDA_VISIBLE_DEVICES=0 python train.py --name transf_08_imswap224 --batchSize 16  --gpu_ids 0 --dataset /home/astro/Documents/UvA/Thesis/vggface2_crop_arcfacealign_224 --Gdeep False --transf True #pixelshuffle instead of decoder layer, nothing in between swin an iid
+# CUDA_VISIBLE_DEVICES=1 python train.py --name transf_09_imswap224 --batchSize 6  --gpu_ids 0 --dataset /home/astro/Documents/UvA/Thesis/vggface2_crop_arcfacealign_224 --Gdeep False --transf True #conv2d Relu pixelshuffle instead of decoder layer, nothing in between swin an iid
+# CUDA_VISIBLE_DEVICES=1 python train.py --name simswap224_bacth64 --batchSize 64 --gpu_ids 0 --dataset /home/astro/Documents/UvA/Thesis/vggface2_crop_arcfacealign_224 --Gdeep False
+# CUDA_VISIBLE_DEVICES=0 python train.py --name transf_10_simswap224 --batchSize 16  --gpu_ids 0 --dataset /home/astro/Documents/UvA/Thesis/vggface2_crop_arcfacealign_224 --Gdeep False --transf True #One bilinearupsample before pixelshuffle instead of decoder layer, nothing in between swin an iid
+
+
+#continue training swinswap
+# python train.py --name transf_08_imswap224 --batchSize 16 --gpu_ids 0 --dataset /home/astro/Documents/UvA/Thesis/vggface2_crop_arcfacealign_224 --Gdeep False --transf True --which_epoch 230000 --continue_train True --load_pretrain ./checkpoints/transf_08_imswap224
