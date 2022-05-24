@@ -10,6 +10,7 @@ import torch.nn as nn
 import wandb
 from transformers import AutoFeatureExtractor, SwinModel, SwinConfig
 import wandb
+from .swinIR import SwinIR 
 class InstanceNorm(nn.Module):
     def __init__(self, epsilon=1e-8):
         """
@@ -100,10 +101,55 @@ class Generator_Adain_Upsample(nn.Module):
         self.deep = deep
         self.transf = transf
         self.new_decoder = True
+
         if self.transf==True:
-            self.feature_extractor_swin = AutoFeatureExtractor.from_pretrained("microsoft/swin-tiny-patch4-window7-224")
-            # self.feature_extractor_swin.cuda()
-            configuration = SwinConfig()
+            upscale = 4
+            window_size = 8
+            height = 224#(1024 // upscale // window_size + 1) * window_size
+            width = 224#(720 // upscale // window_size + 1) * window_size
+            self.SwinIR_model = SwinIR(upscale=2, img_size=(height, width),
+                   window_size=window_size, img_range=1., depths=[6, 6, 6, 6],
+                   embed_dim=60, num_heads=[6, 6, 6, 6], mlp_ratio=2, upsampler='pixelshuffledirect')
+            # self.feature_extractor_swin = AutoFeatureExtractor.from_pretrained("microsoft/swin-tiny-patch4-window7-224")
+            # # self.feature_extractor_swin.cuda()
+            # self.conv_first = nn.Conv2d(3, 768,  kernel_size=3, stride=1, padding=1)
+            # configuration = SwinConfig(num_channels=768)
+                        #SwinConfig {
+                        #   "attention_probs_dropout_prob": 0.0,
+                        #   "depths": [
+                        #     2,
+                        #     2,
+                        #     6,
+                        #     2
+                        #   ],
+                        #   "drop_path_rate": 0.1,
+                        #   "embed_dim": 96,
+                        #   "encoder_stride": 32,
+                        #   "hidden_act": "gelu",
+                        #   "hidden_dropout_prob": 0.0,
+                        #   "hidden_size": 768,
+                        #   "image_size": 224,
+                        #   "initializer_range": 0.02,
+                        #   "layer_norm_eps": 1e-05,
+                        #   "mlp_ratio": 4.0,
+                        #   "model_type": "swin",
+                        #   "num_channels": 3,
+                        #   "num_heads": [
+                        #     3,
+                        #     6,
+                        #     12,
+                        #     24
+                        #   ],
+                        #   "num_layers": 4,
+                        #   "patch_size": 4,
+                        #   "path_norm": true,
+                        #   "qkv_bias": true,
+                        #   "transformers_version": "4.17.0",
+                        #   "use_absolute_embeddings": false,
+                        #   "window_size": 7
+                        # }
+
+            # print(configuration)
                             # {
                             # "do_normalize": true,
                             # "do_resize": true,
@@ -122,7 +168,7 @@ class Generator_Adain_Upsample(nn.Module):
                             # "size": 224
                             # }
             # self.swin_model = SwinModel.from_pretrained("microsoft/swin-tiny-patch4-window7-224")
-            self.swin_model = SwinModel(configuration) # Similar to: "microsoft/swin-tiny-patch4-window7-224") #output after forward[B,49,768]
+            # self.swin_model = SwinModel(configuration) # Similar to: "microsoft/swin-tiny-patch4-window7-224") #output after forward[B,49,768]
             # We process the output and get [B,768,7,7]
             # wandb.watch(self.swin_model)
             # for param in self.swin_model.parameters():
@@ -155,6 +201,7 @@ class Generator_Adain_Upsample(nn.Module):
             #                         nn.BatchNorm2d(512), activation
             #                         )
             # self.mask_based_conv = nn.Sequential(nn.Conv2d(D, 32**2*3, kernel_size=1), nn.PixelShuffle(32),norm_layer(64), activation)#,
+            
         else:
             self.first_layer = nn.Sequential(nn.ReflectionPad2d(3), nn.Conv2d(input_nc, 64, kernel_size=7, padding=0),
                                             norm_layer(64), activation)
@@ -245,7 +292,8 @@ class Generator_Adain_Upsample(nn.Module):
             #     nn.BatchNorm2d(3), activation
             # )
             # self.last_layer = nn.Sequential(nn.Conv2d(768, 32**2*3, kernel_size=1), nn.Tanh(), nn.PixelShuffle(32)) # Run 9
-            self.last_layer = nn.Sequential(nn.Conv2d(768, 32**2*3, kernel_size=1), nn.PixelShuffle(32)) # Run 8
+            # self.conv_after_body = nn.Conv2d(768, 768, 3, 1, 1)
+            # self.last_layer = nn.Sequential(nn.Conv2d(768, 32**2*3, kernel_size=1), nn.PixelShuffle(32)) # Run 8
 
 
     def forward(self, input, dlatents):
@@ -253,13 +301,16 @@ class Generator_Adain_Upsample(nn.Module):
         if self.transf==True:
             # print(x.shape)
             # pixel_values = self.feature_extractor_swin(images= x, return_tensors="pt")
-            pixel_values = x
-            last_hidden_state = self.swin_model(pixel_values).last_hidden_state #[B, 49, 768] 49 since image was split in 7x7 regions and each region has an emb of 768 dim
-            # print(last_hidden_state)
-            last_hidden_states = last_hidden_state.transpose(1, 2) #[B, 768, 49])   
-            batch_size, num_channels, sequence_length = last_hidden_states.shape
-            height = width = int(sequence_length**0.5) #7
-            sequence_output = last_hidden_states.reshape(batch_size, num_channels, height, width) #[B, 768, 7, 7]
+            # pixel_values = self.conv_first(x) 
+            # pixel_values = x
+            sequence_output = self.SwinIR_model(x)
+
+            # last_hidden_state = self.swin_model(pixel_values).last_hidden_state #[B, 49, 768] 49 since image was split in 7x7 regions and each region has an emb of 768 dim
+            # # print(last_hidden_state)
+            # last_hidden_states = last_hidden_state.transpose(1, 2) #[B, 768, 49])   
+            # batch_size, num_channels, sequence_length = last_hidden_states.shape
+            # height = width = int(sequence_length**0.5) #7
+            # sequence_output = last_hidden_states.reshape(batch_size, num_channels, height, width) #[B, 768, 7, 7]
             if False and self.new_decoder == False:
                 x = self.swin_upsample(sequence_output) #[B, 512, 28, 28]
             else: 
@@ -291,6 +342,9 @@ class Generator_Adain_Upsample(nn.Module):
             x = self.up1(x)#[B, 64, 224, 224]
             # features.append(x)
         # else:
+
+            # x = self.conv_after_body(x) + pixel_values
+            # x = self.upsample(x)
             # x = self.up4(x)
             # x = self.up3(x)#[B, 256, 56, 56]
             # # features.append(x)
@@ -302,8 +356,8 @@ class Generator_Adain_Upsample(nn.Module):
             # x = self.up1(x)#[B, 768, 14, 14]
             # features.append(x)
             
-        x = self.last_layer(x)#[B, 3, 224, 224]
+        # x = self.last_layer(x)#[B, 3, 224, 224]
         # x = (x + 1) / 2
-
+        # print("Shape swin ir",x.shape)
         # return x, bot, features, dlatents
         return x

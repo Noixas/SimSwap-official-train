@@ -243,7 +243,10 @@ if __name__ == '__main__':
                 latent_fake     = F.normalize(latent_fake, p=2, dim=1)
                 loss_G_ID       = (1 - model.cosin_metric(latent_fake, latent_id)).mean()
                 real_feat       = model.netD.get_feature(src_image1)
-                feat_match_loss = model.criterionFeat(feat["3"],real_feat["3"]) 
+                # print(feat["3"].shape)
+                # print(real_feat["3"].shape)
+                # feat_match_loss = model.criterionFeat(feat["3"],real_feat["3"]) 
+                feat_match_loss = model.criterionFeat( F.interpolate(feat["3"], size=(7,7), mode='bilinear'),real_feat["3"]) 
                 loss_G          = loss_Gmain + loss_G_ID * opt.lambda_id + feat_match_loss * opt.lambda_feat
                 # loss_G          =  feat_match_loss * 0.00001 #opt.lambda_feat
                 
@@ -251,6 +254,8 @@ if __name__ == '__main__':
                 if step%2 == 0:
                     # print("step%2 == 0 is True")
                     #G_Rec
+                    img_fake = F.interpolate(img_fake, size=(224,224), mode='bicubic')
+
                     loss_G_Rec  = model.criterionRec(img_fake, src_image1) * opt.lambda_rec
                     loss_G      += loss_G_Rec
                     # optimizer_G.zero_grad()
