@@ -36,6 +36,7 @@ class fsModel(BaseModel):
 
     def initialize(self, opt):
         BaseModel.initialize(self, opt)
+        self.cos = nn.CosineSimilarity(dim=1, eps=1e-6)
         # if opt.resize_or_crop != 'none' or not opt.isTrain:  # when training at full res this causes OOM
         self.isTrain = opt.isTrain
         torch.cuda.set_device(int(opt.gpu_ids[0]))
@@ -65,7 +66,7 @@ class fsModel(BaseModel):
         # self.netD.feature_network.requires_grad_(False)
         self.netD.cuda(int(opt.gpu_ids[0]))
 
-
+    
         if self.isTrain:
             # define loss functions
             self.criterionFeat  = nn.L1Loss()
@@ -80,7 +81,7 @@ class fsModel(BaseModel):
             # optimizer D
             params = list(self.netD.parameters())
             self.optimizer_D = torch.optim.Adam(params, lr=opt.lr, betas=(opt.beta1, 0.99),eps=1e-8)
-
+            # self.scheduler = torch.optim.MultiStepLR(self.optimizer_G, milestones=[1000,10000], gamma=0.5)
         # load networks
         if opt.continue_train:
             pretrained_path = '' if not self.isTrain else opt.load_pretrain
@@ -93,7 +94,9 @@ class fsModel(BaseModel):
 
     def cosin_metric(self, x1, x2):
         #return np.dot(x1, x2) / (np.linalg.norm(x1) * np.linalg.norm(x2))
+        return self.cos(x1, x2)
         return torch.sum(x1 * x2, dim=1) / (torch.norm(x1, dim=1) * torch.norm(x2, dim=1))
+        # return torch.dot(x1 , x2) / (torch.norm(x1, dim=1) * torch.norm(x2, dim=1))
 
 
 

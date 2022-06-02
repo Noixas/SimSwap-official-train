@@ -8,7 +8,7 @@ import torch.nn as nn
 
 
 import wandb
-from transformers import AutoFeatureExtractor, SwinModel, SwinConfig
+from transformers import AutoFeatureExtractor, SwinModel, SwinConfig, SwinForMaskedImageModeling
 import wandb
 from .swinIR import SwinIR 
 class InstanceNorm(nn.Module):
@@ -103,17 +103,20 @@ class Generator_Adain_Upsample(nn.Module):
         self.new_decoder = True
 
         if self.transf==True:
-            upscale = 4
-            window_size = 8
-            height = 224#(1024 // upscale // window_size + 1) * window_size
-            width = 224#(720 // upscale // window_size + 1) * window_size
-            self.SwinIR_model = SwinIR(upscale=2, img_size=(height, width),
-                   window_size=window_size, img_range=1., depths=[6, 6, 6, 6],
-                   embed_dim=60, num_heads=[6, 6, 6, 6], mlp_ratio=2, upsampler='pixelshuffledirect')
+            # upscale = 4
+            # window_size = 8
+            # height = 224#(1024 // upscale // window_size + 1) * window_size
+            # width = 224#(720 // upscale // window_size + 1) * window_size
+            # self.SwinIR_model = SwinIR(upscale=2, img_size=(height, width),
+            #        window_size=window_size, img_range=1., depths=[6, 6, 6, 6],
+            #        embed_dim=60, num_heads=[6, 6, 6, 6], mlp_ratio=2, upsampler='pixelshuffledirect')
             # self.feature_extractor_swin = AutoFeatureExtractor.from_pretrained("microsoft/swin-tiny-patch4-window7-224")
             # # self.feature_extractor_swin.cuda()
             # self.conv_first = nn.Conv2d(3, 768,  kernel_size=3, stride=1, padding=1)
-            # configuration = SwinConfig(num_channels=768)
+            configuration = SwinConfig(embed_dim=128, depths=[ 2, 2, 18, 2 ],num_heads= [ 4, 8, 16, 32 ])#,window_size=14)
+            configuration = SwinConfig(embed_dim=128, depths=[ 2, 2, 6],num_heads= [ 4, 8, 16])#, 32 ])#,window_size=14)
+            # configuration = SwinConfig(embed_dim=128, depths=[ 2, 2 ,18],num_heads= [ 4,8,8 ])#, 32 ])#,window_size=14)
+
                         #SwinConfig {
                         #   "attention_probs_dropout_prob": 0.0,
                         #   "depths": [
@@ -167,8 +170,14 @@ class Generator_Adain_Upsample(nn.Module):
                             # "resample": 3,
                             # "size": 224
                             # }
-            # self.swin_model = SwinModel.from_pretrained("microsoft/swin-tiny-patch4-window7-224")
+            # self.swin_model = SwinModel.from_pretrained("microsoft/swin-base-patch4-window7-224") 
+            
+            self.swin_model = SwinForMaskedImageModeling.from_pretrained("microsoft/swin-base-patch4-window7-224")
+            # self.swin_model = SwinModel.from_pretrained("../simmim/simmim_finetune__swin_base__img224_window7__100ep")
             # self.swin_model = SwinModel(configuration) # Similar to: "microsoft/swin-tiny-patch4-window7-224") #output after forward[B,49,768]
+            print("======== SWIN MODEL CONFIGURATION ================")
+            print(self.swin_model.config)
+            print("==================================================")
             # We process the output and get [B,768,7,7]
             # wandb.watch(self.swin_model)
             # for param in self.swin_model.parameters():
@@ -250,10 +259,10 @@ class Generator_Adain_Upsample(nn.Module):
         else:
             ### resnet blocks
             BN = []
-            # for i in range(n_blocks):
-            #     BN += [
-            #         ResnetBlock_Adain(768, latent_size=latent_size, padding_type=padding_type, activation=activation)]
-            # self.BottleNeck = nn.Sequential(*BN)
+            for i in range(n_blocks):
+                BN += [
+                    ResnetBlock_Adain(512, latent_size=latent_size, padding_type=padding_type, activation=activation)]
+            self.BottleNeck = nn.Sequential(*BN)
             # self.up2 = nn.Sequential(
             #     nn.Upsample(scale_factor=2, mode='bilinear',align_corners=False),
             #     nn.Conv2d(768, 768, kernel_size=3, stride=1, padding=1),
@@ -293,7 +302,7 @@ class Generator_Adain_Upsample(nn.Module):
             # )
             # self.last_layer = nn.Sequential(nn.Conv2d(768, 32**2*3, kernel_size=1), nn.Tanh(), nn.PixelShuffle(32)) # Run 9
             # self.conv_after_body = nn.Conv2d(768, 768, 3, 1, 1)
-            # self.last_layer = nn.Sequential(nn.Conv2d(768, 32**2*3, kernel_size=1), nn.PixelShuffle(32)) # Run 8
+            self.last_layer = nn.Sequential(nn.Conv2d(512, 16**2*3, kernel_size=1), nn.PixelShuffle(16)) # Run 8
 
 
     def forward(self, input, dlatents):
@@ -302,15 +311,25 @@ class Generator_Adain_Upsample(nn.Module):
             # print(x.shape)
             # pixel_values = self.feature_extractor_swin(images= x, return_tensors="pt")
             # pixel_values = self.conv_first(x) 
-            # pixel_values = x
-            sequence_output = self.SwinIR_model(x)
+            pixel_values = x
+            # sequence_output = self.SwinIR_model(x)
+            swin_output = self.swin_model(pixel_values,output_hidden_states=True)
+            # for h in swin_output.hidden_states:
+            #     print(h.shape)
+            # exit(0)
+            # torch.Size([16, 3136, 128])
+            # torch.Size([16, 784, 256])
+            # torch.Size([16, 196, 512]) #May 24
+            # torch.Size([16, 49, 1024])
+            # torch.Size([16, 49, 1024])
 
-            # last_hidden_state = self.swin_model(pixel_values).last_hidden_state #[B, 49, 768] 49 since image was split in 7x7 regions and each region has an emb of 768 dim
-            # # print(last_hidden_state)
-            # last_hidden_states = last_hidden_state.transpose(1, 2) #[B, 768, 49])   
-            # batch_size, num_channels, sequence_length = last_hidden_states.shape
-            # height = width = int(sequence_length**0.5) #7
-            # sequence_output = last_hidden_states.reshape(batch_size, num_channels, height, width) #[B, 768, 7, 7]
+            last_hidden_state = swin_output.hidden_states[2] #[B, 49, 768] 49 since image was split in 7x7 regions and each region has an emb of 768 dim
+
+            # print(last_hidden_state.shape)
+            last_hidden_states = last_hidden_state.transpose(1, 2) #[B, 768, 49])   
+            batch_size, num_channels, sequence_length = last_hidden_states.shape
+            height = width = int(sequence_length**0.5) #7
+            sequence_output = last_hidden_states.reshape(batch_size, num_channels, height, width) #[B, 768, 7, 7]
             if False and self.new_decoder == False:
                 x = self.swin_upsample(sequence_output) #[B, 512, 28, 28]
             else: 
@@ -327,8 +346,8 @@ class Generator_Adain_Upsample(nn.Module):
         # bot = []
         # bot.append(x)
         # features = []
-        # for i in range(len(self.BottleNeck)):
-        #     x = self.BottleNeck[i](x, dlatents)
+        for i in range(len(self.BottleNeck)):
+            x = self.BottleNeck[i](x, dlatents)
         #     bot.append(x)
         # x.shape = #[4, 512, 28, 28]
         if self.new_decoder == False:
@@ -356,7 +375,7 @@ class Generator_Adain_Upsample(nn.Module):
             # x = self.up1(x)#[B, 768, 14, 14]
             # features.append(x)
             
-        # x = self.last_layer(x)#[B, 3, 224, 224]
+        x = self.last_layer(x)#[B, 3, 224, 224]
         # x = (x + 1) / 2
         # print("Shape swin ir",x.shape)
         # return x, bot, features, dlatents

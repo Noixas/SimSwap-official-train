@@ -24,7 +24,7 @@ def tile(X, rows, cols):
     return tiling
 
 
-def plot_batch(X, out_path):
+def plot_batch(X, out_path,step):
     """Save batch of images tiled."""
     n_channels = X.shape[3]
     if n_channels > 3:
@@ -36,6 +36,6 @@ def plot_batch(X, out_path):
     canvas = np.squeeze(canvas)
     PIL.Image.fromarray(canvas).save(out_path)
     images_output_wandb = wandb.Image(canvas, caption="Output images")      
-    wandb.log({"images_sample": images_output_wandb})
+    wandb.log({"images_sample": images_output_wandb},step=step)
 
 import wandb

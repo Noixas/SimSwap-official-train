@@ -79,7 +79,6 @@ class TrainOptions:
         self.parser.add_argument('--notes', type=str, default='', help='Add notes to the wandb run')
 
 
-
         self.isTrain = True
         
     def parse(self, save=True):
@@ -112,6 +111,11 @@ class TrainOptions:
 if __name__ == '__main__':
 
     opt         = TrainOptions().parse()
+    wandb.init(project="master-thesis",entity='ir2',save_code=True,tags=["transformer"],notes=opt.name + ' ' + opt.notes)
+    # opt = TrainOptions().parse()
+    wandb.config.update(opt)
+    opt.name += " "+wandb.run.name
+
     iter_path   = os.path.join(opt.checkpoints_dir, opt.name, 'iter.txt')
 
     sample_path = os.path.join(opt.checkpoints_dir, opt.name, 'samples')
@@ -136,9 +140,7 @@ if __name__ == '__main__':
     os.environ['CUDA_VISIBLE_DEVICES'] = str(opt.gpu_ids)
     print("GPU used : ", str(opt.gpu_ids))
 
-    wandb.init(project="master-thesis",entity='ir2',save_code=True,tags=["transformer"],notes=opt.name + ' ' + opt.notes)
-    # opt = TrainOptions().parse()
-    wandb.config.update(opt)
+    
     cudnn.benchmark = True
 
     if opt.transf:
@@ -199,9 +201,16 @@ if __name__ == '__main__':
                 #Get generator loss 
                 #Update generator
 
-                    
+    cache_rec = 50                
     for step in range(start, total_step):
         # print("=========Start of step %i train======="%step )
+        # if step >=1000 and cache_rec < 0.10 and opt.lambda_rec != opt.lambda_id:
+        #     print("========= Step %i, changing lambda_rec ======="%step)
+        #     # opt.lambda_rec = opt.lambda_id
+        #     opt.lambda_rec -= 10
+
+        #     print("---New lambda: %i ---" %opt.lambda_rec)
+            # opt.lr
         model.netG.train()
         for interval in range(2):
             # print("---Interval:", interval)
@@ -240,13 +249,25 @@ if __name__ == '__main__':
                 loss_Gmain      = (-gen_logits).mean()
                 img_fake_down   = F.interpolate(img_fake, size=(112,112), mode='bicubic')
                 latent_fake     = model.netArc(img_fake_down)
+                
+                if torch.isnan(latent_fake).any():
+                    print("ERROR NAN IN ARCFACE MODEL!!!!")
+                    exit(-1)
+
                 latent_fake     = F.normalize(latent_fake, p=2, dim=1)
+                # print(latent_fake)
+                # print("NO FAKE BELOw:")
+                # print(latent_id)
+                # print("cosine metric")
+                # print(model.cosin_metric(latent_fake, latent_id))
+                # print(model.cosin_metric(latent_fake, latent_id).mean())
+                # exit(-1)
                 loss_G_ID       = (1 - model.cosin_metric(latent_fake, latent_id)).mean()
                 real_feat       = model.netD.get_feature(src_image1)
                 # print(feat["3"].shape)
                 # print(real_feat["3"].shape)
-                # feat_match_loss = model.criterionFeat(feat["3"],real_feat["3"]) 
-                feat_match_loss = model.criterionFeat( F.interpolate(feat["3"], size=(7,7), mode='bilinear'),real_feat["3"]) 
+                feat_match_loss = model.criterionFeat(feat["3"],real_feat["3"]) 
+                # feat_match_loss = model.criterionFeat( F.interpolate(feat["3"], size=(7,7), mode='bilinear'),real_feat["3"]) 
                 loss_G          = loss_Gmain + loss_G_ID * opt.lambda_id + feat_match_loss * opt.lambda_feat
                 # loss_G          =  feat_match_loss * 0.00001 #opt.lambda_feat
                 
@@ -254,10 +275,10 @@ if __name__ == '__main__':
                 if step%2 == 0:
                     # print("step%2 == 0 is True")
                     #G_Rec
-                    img_fake = F.interpolate(img_fake, size=(224,224), mode='bicubic')
+                    # img_fake = F.interpolate(img_fake, size=(224,224), mode='bicubic')
 
-                    loss_G_Rec  = model.criterionRec(img_fake, src_image1) * opt.lambda_rec
-                    loss_G      += loss_G_Rec
+                    loss_G_Rec  = model.criterionRec(img_fake, src_image1) 
+                    loss_G      += (loss_G_Rec * opt.lambda_rec)
                     # optimizer_G.zero_grad()
                     # loss_G.backward()
                     # optimizer_G.step()
@@ -282,7 +303,7 @@ if __name__ == '__main__':
                 "D_loss":loss_D.item()
             }
             wandb.log(errors,step=step) 
-
+            cache_rec = loss_G_Rec.item()
             if opt.use_tensorboard:
                 for tag, value in errors.items():
                     logger.add_scalar(tag, value, step)
@@ -295,7 +316,7 @@ if __name__ == '__main__':
                 log_file.write('%s\n' % message)
 
         ### display output images
-        if (step + 1) % opt.sample_freq == 0:
+        if ((step + 1) % opt.sample_freq == 0) or (step <1000 and (step + 1) % 200 == 0): #plot more at the beginning 
             model.netG.eval()
             with torch.no_grad():
                 imgs        = list()
@@ -313,9 +334,10 @@ if __name__ == '__main__':
                     imgs.append(save_img[i,...])
                     image_infer = src_image1[i, ...].repeat(opt.batchSize, 1, 1, 1)
                     img_fake    = model.netG(image_infer, id_vector_src1).cpu()
-                    
                     img_fake    = img_fake * imagenet_std
                     img_fake    = img_fake + imagenet_mean
+
+                    # img_fake = F.interpolate(img_fake, size=(224,224), mode='bicubic') #remove after using swin IR
                     img_fake    = img_fake.numpy()
                     for j in range(opt.batchSize):
                         imgs.append(img_fake[j,...])
@@ -323,7 +345,7 @@ if __name__ == '__main__':
                 imgs = np.stack(imgs, axis = 0).transpose(0,2,3,1)
                 # images_output_wandb = wandb.Image(imgs, caption="Output images")         
                 # wandb.log({"images_sample": images_output_wandb})
-                plot_batch(imgs, os.path.join(sample_path, 'step_'+str(step+1)+'.jpg'))
+                plot_batch(imgs, os.path.join(sample_path, 'step_'+str(step+1)+'.jpg'),step)
 
         ### save latest model
         if (step+1) % opt.model_freq==0:
