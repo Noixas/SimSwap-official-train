@@ -176,7 +176,7 @@ class Generator_Adain_Upsample(nn.Module):
             # self.swin_model = SwinModel.from_pretrained("../simmim/simmim_finetune__swin_base__img224_window7__100ep")
             # self.swin_model = SwinModel(configuration) # Similar to: "microsoft/swin-tiny-patch4-window7-224") #output after forward[B,49,768]
             print("======== SWIN MODEL CONFIGURATION ================")
-            print(self.swin_model.config)
+            # print(self.swin_model.config)
             print("==================================================")
             # We process the output and get [B,768,7,7]
             # wandb.watch(self.swin_model)
@@ -261,7 +261,7 @@ class Generator_Adain_Upsample(nn.Module):
             BN = []
             for i in range(n_blocks):
                 BN += [
-                    ResnetBlock_Adain(512, latent_size=latent_size, padding_type=padding_type, activation=activation)]
+                    ResnetBlock_Adain(256, latent_size=latent_size, padding_type=padding_type, activation=activation)]
             self.BottleNeck = nn.Sequential(*BN)
             # self.up2 = nn.Sequential(
             #     nn.Upsample(scale_factor=2, mode='bilinear',align_corners=False),
@@ -302,7 +302,9 @@ class Generator_Adain_Upsample(nn.Module):
             # )
             # self.last_layer = nn.Sequential(nn.Conv2d(768, 32**2*3, kernel_size=1), nn.Tanh(), nn.PixelShuffle(32)) # Run 9
             # self.conv_after_body = nn.Conv2d(768, 768, 3, 1, 1)
-            self.last_layer = nn.Sequential(nn.Conv2d(512, 16**2*3, kernel_size=1), nn.PixelShuffle(16)) # Run 8
+            scale = 8
+            # self.last_layer = nn.Sequential(nn.Conv2d(512, 16**2*3, kernel_size=1) ,nn.PixelShuffle(16)) # Run 8 #When using hidden_state 2
+            self.last_layer = nn.Sequential(nn.Conv2d(256, scale**2*3, kernel_size=1) ,nn.PixelShuffle(scale)) # When using hidden_state 2
 
 
     def forward(self, input, dlatents):
@@ -317,13 +319,13 @@ class Generator_Adain_Upsample(nn.Module):
             # for h in swin_output.hidden_states:
             #     print(h.shape)
             # exit(0)
-            # torch.Size([16, 3136, 128])
-            # torch.Size([16, 784, 256])
-            # torch.Size([16, 196, 512]) #May 24
-            # torch.Size([16, 49, 1024])
-            # torch.Size([16, 49, 1024])
-
-            last_hidden_state = swin_output.hidden_states[2] #[B, 49, 768] 49 since image was split in 7x7 regions and each region has an emb of 768 dim
+            # torch.Size([16, 3136, 128]) [0]
+            # torch.Size([16, 784, 256]) [1] -28
+            # torch.Size([16, 196, 512]) #May 24   -14
+            # torch.Size([16, 49, 1024]) [3] -
+            # torch.Size([16, 49, 1024]) [4]
+            
+            last_hidden_state = swin_output.hidden_states[1] #[B, 49, 768] 49 since image was split in 7x7 regions and each region has an emb of 768 dim
 
             # print(last_hidden_state.shape)
             last_hidden_states = last_hidden_state.transpose(1, 2) #[B, 768, 49])   

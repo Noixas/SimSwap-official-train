@@ -77,6 +77,7 @@ class TrainOptions:
         #transformer
         self.parser.add_argument('--transf', type=str2bool, default='False')
         self.parser.add_argument('--notes', type=str, default='', help='Add notes to the wandb run')
+        self.parser.add_argument('--disable_gan', type=str2bool, default='False')
 
 
         self.isTrain = True
@@ -114,7 +115,7 @@ if __name__ == '__main__':
     wandb.init(project="master-thesis",entity='ir2',save_code=True,tags=["transformer"],notes=opt.name + ' ' + opt.notes)
     # opt = TrainOptions().parse()
     wandb.config.update(opt)
-    opt.name += " "+wandb.run.name
+    opt.name += "-"+wandb.run.name
 
     iter_path   = os.path.join(opt.checkpoints_dir, opt.name, 'iter.txt')
 
@@ -148,7 +149,8 @@ if __name__ == '__main__':
     
 
     model = fsModel()
-
+    opt.disable_gan = True
+    disable_gan = opt.disable_gan       
     model.initialize(opt)
     # print(model)
     #####################################################
@@ -201,7 +203,7 @@ if __name__ == '__main__':
                 #Get generator loss 
                 #Update generator
 
-    cache_rec = 50                
+    cache_rec = 50          
     for step in range(start, total_step):
         # print("=========Start of step %i train======="%step )
         # if step >=1000 and cache_rec < 0.10 and opt.lambda_rec != opt.lambda_id:
@@ -212,7 +214,8 @@ if __name__ == '__main__':
         #     print("---New lambda: %i ---" %opt.lambda_rec)
             # opt.lr
         model.netG.train()
-        for interval in range(2):
+        range_amount = 1 if disable_gan else 2 #if gan is diabled then range will skip interval==True step
+        for interval in range(range_amount):
             # print("---Interval:", interval)
             random.shuffle(randindex)
             src_image1, src_image2  = train_loader.next()
@@ -238,15 +241,19 @@ if __name__ == '__main__':
                 optimizer_D.zero_grad()
                 loss_D.backward()
                 optimizer_D.step()
+                if disable_gan:
+                    print("We should be skiping this step if gan is diabled")
+                    exit(-1)
             else:            
                 # print("Interval: False")
     
                 # model.netD.requires_grad_(True)
                 img_fake        = model.netG(src_image1, latent_id)
                 # G loss
-                gen_logits,feat = model.netD(img_fake, None)
-                
-                loss_Gmain      = (-gen_logits).mean()
+                if disable_gan ==False:
+                    gen_logits,feat = model.netD(img_fake, None)
+                    
+                    loss_Gmain      = (-gen_logits).mean()
                 img_fake_down   = F.interpolate(img_fake, size=(112,112), mode='bicubic')
                 latent_fake     = model.netArc(img_fake_down)
                 
@@ -255,20 +262,17 @@ if __name__ == '__main__':
                     exit(-1)
 
                 latent_fake     = F.normalize(latent_fake, p=2, dim=1)
-                # print(latent_fake)
-                # print("NO FAKE BELOw:")
-                # print(latent_id)
-                # print("cosine metric")
-                # print(model.cosin_metric(latent_fake, latent_id))
-                # print(model.cosin_metric(latent_fake, latent_id).mean())
-                # exit(-1)
                 loss_G_ID       = (1 - model.cosin_metric(latent_fake, latent_id)).mean()
                 real_feat       = model.netD.get_feature(src_image1)
                 # print(feat["3"].shape)
                 # print(real_feat["3"].shape)
-                feat_match_loss = model.criterionFeat(feat["3"],real_feat["3"]) 
+                if disable_gan ==False:
+                    feat_match_loss = model.criterionFeat(feat["3"],real_feat["3"]) 
                 # feat_match_loss = model.criterionFeat( F.interpolate(feat["3"], size=(7,7), mode='bilinear'),real_feat["3"]) 
-                loss_G          = loss_Gmain + loss_G_ID * opt.lambda_id + feat_match_loss * opt.lambda_feat
+                
+                loss_G = loss_G_ID * opt.lambda_id 
+                if disable_gan ==False:
+                    loss_G += loss_Gmain + feat_match_loss * opt.lambda_feat
                 # loss_G          =  feat_match_loss * 0.00001 #opt.lambda_feat
                 
 
@@ -276,6 +280,7 @@ if __name__ == '__main__':
                     # print("step%2 == 0 is True")
                     #G_Rec
                     # img_fake = F.interpolate(img_fake, size=(224,224), mode='bicubic')
+                    print(opt.lambda_rec)
 
                     loss_G_Rec  = model.criterionRec(img_fake, src_image1) 
                     loss_G      += (loss_G_Rec * opt.lambda_rec)
@@ -293,15 +298,26 @@ if __name__ == '__main__':
         # Print out log info
         if (step + 1) % opt.log_frep == 0:
             # errors = {k: v.data.item() if not isinstance(v, int) else v for k, v in loss_dict.items()}
-            errors = {
-                "G_Loss":loss_Gmain.item(),
-                "G_ID":loss_G_ID.item(),
-                "G_Rec":loss_G_Rec.item(),
-                "G_feat_match":feat_match_loss.item(),
-                "D_fake":loss_Dgen.item(),
-                "D_real":loss_Dreal.item(),
-                "D_loss":loss_D.item()
-            }
+            if disable_gan ==False:
+                errors = {
+                    "G_Loss":loss_Gmain.item(),
+                    "G_ID":loss_G_ID.item(),
+                    "G_Rec":loss_G_Rec.item(),
+                    "G_feat_match":feat_match_loss.item(),
+                    "D_fake":loss_Dgen.item(),
+                    "D_real":loss_Dreal.item(),
+                    "D_loss":loss_D.item()
+                }
+            else:
+                errors = {
+                    "G_Loss":-9999,
+                    "G_ID":loss_G_ID.item(),
+                    "G_Rec":loss_G_Rec.item(),
+                    "G_feat_match": -9999,
+                    "D_fake":-9999,
+                    "D_real":-9999,
+                    "D_loss":-9999
+                }
             wandb.log(errors,step=step) 
             cache_rec = loss_G_Rec.item()
             if opt.use_tensorboard:

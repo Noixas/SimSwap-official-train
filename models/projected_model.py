@@ -62,6 +62,7 @@ class fsModel(BaseModel):
             pretrained_path =  opt.checkpoints_dir
             self.load_network(self.netG, 'G', opt.which_epoch, pretrained_path)
             return
+        
         self.netD = ProjectedDiscriminator(diffaug=False, interp224=False, **{})
         # self.netD.feature_network.requires_grad_(False)
         self.netD.cuda(int(opt.gpu_ids[0]))
