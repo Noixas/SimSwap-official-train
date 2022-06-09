@@ -78,6 +78,7 @@ class TrainOptions:
         self.parser.add_argument('--transf', type=str2bool, default='False')
         self.parser.add_argument('--notes', type=str, default='', help='Add notes to the wandb run')
         self.parser.add_argument('--disable_gan', type=str2bool, default='False')
+        self.parser.add_argument('--disable_faceswap', type=str2bool, default='False')
 
 
         self.isTrain = True
@@ -222,7 +223,7 @@ if __name__ == '__main__':
             # print("step%2==", step%2)
             if step%2 == 0:
                 img_id = src_image2
-            else:
+            elif opt.disable_faceswap == False :
                 img_id = src_image2[randindex]
 
             img_id_112      = F.interpolate(img_id,size=(112,112), mode='bicubic')
@@ -263,10 +264,11 @@ if __name__ == '__main__':
 
                 latent_fake     = F.normalize(latent_fake, p=2, dim=1)
                 loss_G_ID       = (1 - model.cosin_metric(latent_fake, latent_id)).mean()
-                real_feat       = model.netD.get_feature(src_image1)
+                
                 # print(feat["3"].shape)
                 # print(real_feat["3"].shape)
                 if disable_gan ==False:
+                    real_feat       = model.netD.get_feature(src_image1)
                     feat_match_loss = model.criterionFeat(feat["3"],real_feat["3"]) 
                 # feat_match_loss = model.criterionFeat( F.interpolate(feat["3"], size=(7,7), mode='bilinear'),real_feat["3"]) 
                 
@@ -276,11 +278,11 @@ if __name__ == '__main__':
                 # loss_G          =  feat_match_loss * 0.00001 #opt.lambda_feat
                 
 
-                if step%2 == 0:
+                if step%2 == 0: #TODO: Should this also happen if face swap is disabled? Or do we gain some insight by not using rec loss in 1/2 the batches
                     # print("step%2 == 0 is True")
                     #G_Rec
                     # img_fake = F.interpolate(img_fake, size=(224,224), mode='bicubic')
-                    print(opt.lambda_rec)
+                    # print(opt.lambda_rec)
 
                     loss_G_Rec  = model.criterionRec(img_fake, src_image1) 
                     loss_G      += (loss_G_Rec * opt.lambda_rec)

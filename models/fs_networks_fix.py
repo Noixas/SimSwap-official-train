@@ -261,7 +261,7 @@ class Generator_Adain_Upsample(nn.Module):
             BN = []
             for i in range(n_blocks):
                 BN += [
-                    ResnetBlock_Adain(256, latent_size=latent_size, padding_type=padding_type, activation=activation)]
+                    ResnetBlock_Adain(512, latent_size=latent_size, padding_type=padding_type, activation=activation)]
             self.BottleNeck = nn.Sequential(*BN)
             # self.up2 = nn.Sequential(
             #     nn.Upsample(scale_factor=2, mode='bilinear',align_corners=False),
@@ -302,9 +302,9 @@ class Generator_Adain_Upsample(nn.Module):
             # )
             # self.last_layer = nn.Sequential(nn.Conv2d(768, 32**2*3, kernel_size=1), nn.Tanh(), nn.PixelShuffle(32)) # Run 9
             # self.conv_after_body = nn.Conv2d(768, 768, 3, 1, 1)
-            scale = 8
+            scale = 16
             # self.last_layer = nn.Sequential(nn.Conv2d(512, 16**2*3, kernel_size=1) ,nn.PixelShuffle(16)) # Run 8 #When using hidden_state 2
-            self.last_layer = nn.Sequential(nn.Conv2d(256, scale**2*3, kernel_size=1) ,nn.PixelShuffle(scale)) # When using hidden_state 2
+            self.last_layer = nn.Sequential(nn.Conv2d(512, scale**2*3, kernel_size=1) ,nn.PixelShuffle(scale)) # When using hidden_state 2
 
 
     def forward(self, input, dlatents):
@@ -325,7 +325,7 @@ class Generator_Adain_Upsample(nn.Module):
             # torch.Size([16, 49, 1024]) [3] -
             # torch.Size([16, 49, 1024]) [4]
             
-            last_hidden_state = swin_output.hidden_states[1] #[B, 49, 768] 49 since image was split in 7x7 regions and each region has an emb of 768 dim
+            last_hidden_state = swin_output.hidden_states[2] #[B, 49, 768] 49 since image was split in 7x7 regions and each region has an emb of 768 dim
 
             # print(last_hidden_state.shape)
             last_hidden_states = last_hidden_state.transpose(1, 2) #[B, 768, 49])   
