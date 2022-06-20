@@ -79,6 +79,7 @@ class TrainOptions:
         self.parser.add_argument('--notes', type=str, default='', help='Add notes to the wandb run')
         self.parser.add_argument('--disable_gan', type=str2bool, default='False')
         self.parser.add_argument('--disable_faceswap', type=str2bool, default='False')
+        self.parser.add_argument('--print_stats', type=str2bool, default='False')
 
 
         self.isTrain = True
@@ -150,7 +151,7 @@ if __name__ == '__main__':
     
 
     model = fsModel()
-    opt.disable_gan = True
+    # opt.disable_gan = True
     disable_gan = opt.disable_gan       
     model.initialize(opt)
     # print(model)
@@ -234,7 +235,7 @@ if __name__ == '__main__':
                 img_fake        = model.netG(src_image1, latent_id)
                 gen_logits,_    = model.netD(img_fake.detach(), None)
                 loss_Dgen       = (F.relu(torch.ones_like(gen_logits) + gen_logits)).mean()
-
+                
                 real_logits,_   = model.netD(src_image2,None)
                 loss_Dreal      = (F.relu(torch.ones_like(real_logits) - real_logits)).mean()
 
@@ -249,7 +250,10 @@ if __name__ == '__main__':
                 # print("Interval: False")
     
                 # model.netD.requires_grad_(True)
-                img_fake        = model.netG(src_image1, latent_id)
+                if opt.print_stats and (step + 1) % opt.log_frep == 0: #compute stats of tensors if its output step
+                    img_fake,stats_tensors = model.netG(src_image1, latent_id,return_stats= opt.print_stats)
+                else:
+                    img_fake        = model.netG(src_image1, latent_id)
                 # G loss
                 if disable_gan ==False:
                     gen_logits,feat = model.netD(img_fake, None)
@@ -286,10 +290,7 @@ if __name__ == '__main__':
 
                     loss_G_Rec  = model.criterionRec(img_fake, src_image1) 
                     loss_G      += (loss_G_Rec * opt.lambda_rec)
-                    # optimizer_G.zero_grad()
-                    # loss_G.backward()
-                    # optimizer_G.step()
-                
+                    
                 optimizer_G.zero_grad()
                 loss_G.backward()
                 optimizer_G.step()
@@ -300,6 +301,7 @@ if __name__ == '__main__':
         # Print out log info
         if (step + 1) % opt.log_frep == 0:
             # errors = {k: v.data.item() if not isinstance(v, int) else v for k, v in loss_dict.items()}
+            
             if disable_gan ==False:
                 errors = {
                     "G_Loss":loss_Gmain.item(),
@@ -319,8 +321,12 @@ if __name__ == '__main__':
                     "D_fake":-9999,
                     "D_real":-9999,
                     "D_loss":-9999
-                }
+                }            
             wandb.log(errors,step=step) 
+            if opt.print_stats:
+                wandb.log(stats_tensors,step=step) 
+                errors.update(stats_tensors)
+
             cache_rec = loss_G_Rec.item()
             if opt.use_tensorboard:
                 for tag, value in errors.items():

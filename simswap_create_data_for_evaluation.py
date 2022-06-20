@@ -153,10 +153,13 @@ if __name__ == '__main__':
     opt= opt.parse()
     opt.output_path = "../../deep_fake_master_thesis/10k_dataset/"
     opt.checkpoints_dir = "./checkpoints/"
-    for checkpoint_num in range(100000,400000,50000):
+    
+    for checkpoint_num in range(100000,500000,100000):
         # if checkpoint_num == 200000 or checkpoint_num == 300000:
 
         opt.which_epoch = checkpoint_num
         print('Generating data for epoch ',checkpoint_num)
         generate_data_with_model(opt,opt.name)
 # python simswap_create_data_for_evaluation.py --isTrain false --name simswap224_retry --Arc_path arcface_model/arcface_checkpoint.tar --dataset_both_folder "../../deep_fake_master_thesis/10k_dataset/original/both/" --output_path  "../../deep_fake_master_thesis/10k_dataset/" --no_simswaplogo
+#June 14
+# CUDA_VISIBLE_DEVICES=1  python simswap_create_data_for_evaluation.py --isTrain false --name exp_temp_rtx3090_swinTswap224_debugging-super-bee-157 --Arc_path arcface_model/arcface_checkpoint.tar --dataset_both_folder "../../deep_fake_master_thesis/10k_dataset/original/both/" --output_path  "../../deep_fake_master_thesis/10k_dataset/" --no_simswaplogo --transf True

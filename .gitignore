@@ -143,3 +143,5 @@ wandb/
 demo_file/
 
 output/
+
+checkpoints-June20/

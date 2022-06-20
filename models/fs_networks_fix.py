@@ -95,12 +95,12 @@ class Generator_Adain_Upsample(nn.Module):
         assert (n_blocks >= 0)
         super(Generator_Adain_Upsample, self).__init__()
         # wandb.run.log_code(".")
-        wandb.run.log_code(".", include_fn=lambda path: path.endswith(".py"))
+        # wandb.run.log_code(".", include_fn=lambda path: path.endswith(".py"))
         activation = nn.ReLU(True)
-        
+        self.activation = activation
         self.deep = deep
         self.transf = transf
-        self.new_decoder = True
+        self.new_decoder = False
 
         if self.transf==True:
             # upscale = 4
@@ -115,6 +115,9 @@ class Generator_Adain_Upsample(nn.Module):
             # self.conv_first = nn.Conv2d(3, 768,  kernel_size=3, stride=1, padding=1)
             configuration = SwinConfig(embed_dim=128, depths=[ 2, 2, 18, 2 ],num_heads= [ 4, 8, 16, 32 ])#,window_size=14)
             configuration = SwinConfig(embed_dim=128, depths=[ 2, 2, 6],num_heads= [ 4, 8, 16])#, 32 ])#,window_size=14)
+            configuration = SwinConfig(embed_dim=128, depths=[ 2, 2],num_heads= [ 4, 8])#, 32 ])#,window_size=14)
+
+            # configuration = SwinConfig(embed_dim=256, depths=[ 4, 4],num_heads= [ 4, 8])#, 32 ])#,window_size=14)
             # configuration = SwinConfig(embed_dim=128, depths=[ 2, 2 ,18],num_heads= [ 4,8,8 ])#, 32 ])#,window_size=14)
 
                         #SwinConfig {
@@ -172,9 +175,13 @@ class Generator_Adain_Upsample(nn.Module):
                             # }
             # self.swin_model = SwinModel.from_pretrained("microsoft/swin-base-patch4-window7-224") 
             
-            self.swin_model = SwinForMaskedImageModeling.from_pretrained("microsoft/swin-base-patch4-window7-224")
+            # self.swin_model = SwinForMaskedImageModeling.from_pretrained("microsoft/swin-base-patch4-window7-224")
+            # self.post_swin = nn.Sequential(norm_layer(256), activation)
+            
             # self.swin_model = SwinModel.from_pretrained("../simmim/simmim_finetune__swin_base__img224_window7__100ep")
-            # self.swin_model = SwinModel(configuration) # Similar to: "microsoft/swin-tiny-patch4-window7-224") #output after forward[B,49,768]
+            self.swin_model = SwinModel(configuration) # Similar to: "microsoft/swin-tiny-patch4-window7-224") #output after forward[B,49,768]
+            self.post_swin = nn.Sequential(nn.Conv2d(256, 512, kernel_size=1), norm_layer(512), activation)
+            # self.post_swin = nn.Sequential(norm_layer(512), activation)
             print("======== SWIN MODEL CONFIGURATION ================")
             # print(self.swin_model.config)
             print("==================================================")
@@ -234,12 +241,12 @@ class Generator_Adain_Upsample(nn.Module):
                     ResnetBlock_Adain(512, latent_size=latent_size, padding_type=padding_type, activation=activation)]
             self.BottleNeck = nn.Sequential(*BN)
 
-            if self.deep:
-                self.up4 = nn.Sequential(
-                    nn.Upsample(scale_factor=2, mode='bilinear',align_corners=False),
-                    nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
-                    nn.BatchNorm2d(512), activation
-                )
+            # if self.deep:
+            #     self.up4 = nn.Sequential(
+            #         nn.Upsample(scale_factor=2, mode='bilinear',align_corners=False),
+            #         nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
+            #         nn.BatchNorm2d(512), activation
+            #     )
             self.up3 = nn.Sequential(
                 nn.Upsample(scale_factor=2, mode='bilinear',align_corners=False),
                 nn.Conv2d(512, 256, kernel_size=3, stride=1, padding=1),
@@ -302,13 +309,39 @@ class Generator_Adain_Upsample(nn.Module):
             # )
             # self.last_layer = nn.Sequential(nn.Conv2d(768, 32**2*3, kernel_size=1), nn.Tanh(), nn.PixelShuffle(32)) # Run 9
             # self.conv_after_body = nn.Conv2d(768, 768, 3, 1, 1)
-            scale = 16
+            # scale = 8#16
             # self.last_layer = nn.Sequential(nn.Conv2d(512, 16**2*3, kernel_size=1) ,nn.PixelShuffle(16)) # Run 8 #When using hidden_state 2
-            self.last_layer = nn.Sequential(nn.Conv2d(512, scale**2*3, kernel_size=1) ,nn.PixelShuffle(scale)) # When using hidden_state 2
+            # self.last_layer = nn.Sequential( nn.Conv2d(512, scale**2*3, kernel_size=1) ,nn.PixelShuffle(scale)) # When using hidden_state 2
+            ###JUNE
+            self.up3 = nn.Sequential(
+                nn.Upsample(scale_factor=2, mode='bilinear',align_corners=False),
+                nn.Conv2d(512, 256, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(256), activation
+            )
+            self.up2 = nn.Sequential(
+                nn.Upsample(scale_factor=2, mode='bilinear',align_corners=False),
+                nn.Conv2d(256, 128, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(128), activation
+            )
+            self.up1 = nn.Sequential(
+                nn.Upsample(scale_factor=2, mode='bilinear',align_corners=False),
+                nn.Conv2d(128, 64, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(64), activation
+            )
+            self.last_layer = nn.Sequential(nn.ReflectionPad2d(3), nn.Conv2d(64, output_nc, kernel_size=7, padding=0))
 
 
-    def forward(self, input, dlatents):
+
+            # scale = 8#16
+            # self.semi_last = nn.Sequential( nn.BatchNorm2d(512), nn.Tanh())
+            # self.last_layer = nn.Sequential(  nn.Conv2d(512, scale**2*3, kernel_size=1) ,nn.PixelShuffle(scale)) # When using hidden_state 2
+
+
+    def forward(self, input, dlatents, return_stats=False):
         x = input  # 3*224*224
+        ##################################################
+        ########### ENCODER ##############################
+        ##################################################
         if self.transf==True:
             # print(x.shape)
             # pixel_values = self.feature_extractor_swin(images= x, return_tensors="pt")
@@ -316,27 +349,24 @@ class Generator_Adain_Upsample(nn.Module):
             pixel_values = x
             # sequence_output = self.SwinIR_model(x)
             swin_output = self.swin_model(pixel_values,output_hidden_states=True)
-            # for h in swin_output.hidden_states:
-            #     print(h.shape)
-            # exit(0)
             # torch.Size([16, 3136, 128]) [0]
             # torch.Size([16, 784, 256]) [1] -28
             # torch.Size([16, 196, 512]) #May 24   -14
             # torch.Size([16, 49, 1024]) [3] -
             # torch.Size([16, 49, 1024]) [4]
             
-            last_hidden_state = swin_output.hidden_states[2] #[B, 49, 768] 49 since image was split in 7x7 regions and each region has an emb of 768 dim
-
+            last_hidden_state = swin_output.hidden_states[1] #[B, 49, 768] 49 since image was split in 7x7 regions and each region has an emb of 768 dim
+            
             # print(last_hidden_state.shape)
             last_hidden_states = last_hidden_state.transpose(1, 2) #[B, 768, 49])   
             batch_size, num_channels, sequence_length = last_hidden_states.shape
             height = width = int(sequence_length**0.5) #7
             sequence_output = last_hidden_states.reshape(batch_size, num_channels, height, width) #[B, 768, 7, 7]
-            if False and self.new_decoder == False:
-                x = self.swin_upsample(sequence_output) #[B, 512, 28, 28]
-            else: 
-                x = sequence_output                
-        else:
+            last_hidden_state = self.post_swin(sequence_output)
+            sequence_output = last_hidden_state # I know is redundant so should clean, its used to quickly iterate printing stats 
+
+            x = sequence_output   
+        else: #Standard simswap
             skip1 = self.first_layer(x)
             skip2 = self.down1(skip1)
             skip3 = self.down2(skip2)
@@ -345,40 +375,84 @@ class Generator_Adain_Upsample(nn.Module):
                 x = self.down4(skip4)
             else:
                 x = self.down3(skip3)
-        # bot = []
-        # bot.append(x)
-        # features = []
+            if return_stats:
+                    last_hidden_state = x
+        ################################################################
+        ######### Bottleneck - IID ###############################
+        ############################################
         for i in range(len(self.BottleNeck)):
             x = self.BottleNeck[i](x, dlatents)
         #     bot.append(x)
-        # x.shape = #[4, 512, 28, 28]
-        if self.new_decoder == False:
+        if return_stats:
+            std_mean_bottleneck = torch.std_mean(x)
+            max_bottleneck = torch.max(x)
+            min_bottleneck = torch.min(x)
+
+
+        #############################################################
+        ######## Decoder #######################
+        ###############################
+        if self.new_decoder == False:                 
             if self.deep:
                 x = self.up4(x)
                 # features.append(x)
-            x = self.up3(x)#[B, 256, 56, 56]
+            x = self.up3(x)#Output: [B, 256, 56, 56]
             # features.append(x)
             x = self.up2(x)#[B, 128, 112, 112])
             # features.append(x)
             x = self.up1(x)#[B, 64, 224, 224]
-            # features.append(x)
-        # else:
-
+                # features.append(x)            
             # x = self.conv_after_body(x) + pixel_values
             # x = self.upsample(x)
-            # x = self.up4(x)
-            # x = self.up3(x)#[B, 256, 56, 56]
-            # # features.append(x)
-            # x = self.up2(x)#[B, 128, 112, 112])
-            # # features.append(x)
-            # x = self.up1(x)#[B, 64, 224, 224]
-            # x = self.up0(x)
-            # features.append(x)
-            # x = self.up1(x)#[B, 768, 14, 14]
-            # features.append(x)
+            semi_last_out = x
+            x = self.last_layer(x)
+        else:                               
+            semi_last_out = self.semi_last(x)
+            x = semi_last_out
+            x = self.last_layer(x)#[B, 3, 224, 224]
+             
+                     
+        ###################################3
+        ##### STATS @@#################33
+        ##############################
+
+        
+        if return_stats:
+            std_mean_last_hidden_state = torch.std_mean(last_hidden_state)
+            max_last_hidden_state = torch.max(last_hidden_state)
+            min_last_hidden_state = torch.min(last_hidden_state)
+
+            std_mean_semi_last = torch.std_mean(semi_last_out)
+            max_semi_last = torch.max(semi_last_out)
+            min_semi_last = torch.min(semi_last_out)
+
+
+            std_mean_img_fake = torch.std_mean(x)
+            max_img_fake = torch.max(x)
+            min_img_fake = torch.min(x)
+                
+            stats_tensors = {
+            "std_encoder_out":std_mean_last_hidden_state[0] ,
+            "mean_encoder_out":std_mean_last_hidden_state[1] ,
+            "max_encoder_out":max_last_hidden_state,
+            "min_encoder_out":min_last_hidden_state,
+
+            "std_bottleneck":std_mean_bottleneck[0] ,
+            "mean_bottleneck":std_mean_bottleneck[1] ,
+            "max_bottleneck":max_bottleneck,
+            "min_bottleneck":min_bottleneck,
+
+            "std_semi_last":std_mean_semi_last[0] ,
+            "mean_semi_last":std_mean_semi_last[1] ,
+            "max_semi_last":max_semi_last,
+            "min_semi_last":min_semi_last ,
             
-        x = self.last_layer(x)#[B, 3, 224, 224]
-        # x = (x + 1) / 2
-        # print("Shape swin ir",x.shape)
-        # return x, bot, features, dlatents
-        return x
+            "std_img_fake":std_mean_img_fake[0] ,
+            "mean_img_fake":std_mean_img_fake[1] ,
+            "max_img_fake":max_img_fake,
+            "min_img_fake":min_img_fake            
+        }
+            return x, stats_tensors
+        else:
+            return x
+
