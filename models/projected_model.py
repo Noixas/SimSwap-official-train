@@ -13,12 +13,31 @@
 
 import torch
 import torch.nn as nn
-import wandb
+# import wandb
 from .base_model import BaseModel
-from .fs_networks_fix import Generator_Adain_Upsample
+# from .fs_networks_fix import Generator_Adain_Upsample
+from .fs_networks_transformer import Generator_Adain_Upsample
 
 from pg_modules.projected_discriminator import ProjectedDiscriminator
+import numpy as np
 
+class CosineWarmupScheduler(torch.optim.lr_scheduler._LRScheduler):
+
+    def __init__(self, optimizer, warmup, max_iters):
+        self.warmup = warmup
+        self.max_num_iters = max_iters
+        super().__init__(optimizer)
+
+    def get_lr(self):
+        lr_factor = self.get_lr_factor(epoch=self.last_epoch)
+        return [base_lr * lr_factor for base_lr in self.base_lrs]
+
+    def get_lr_factor(self, epoch):
+        lr_factor = 0.5 * (1 + np.cos(np.pi * epoch / self.max_num_iters))
+        if epoch <= self.warmup:
+            lr_factor *= epoch * 1.0 / self.warmup
+        return lr_factor
+        
 def compute_grad2(d_out, x_in):
     batch_size = x_in.size(0)
     grad_dout = torch.autograd.grad(
@@ -41,7 +60,10 @@ class fsModel(BaseModel):
         self.isTrain = opt.isTrain
         torch.cuda.set_device(int(opt.gpu_ids[0]))
         # Generator network
+        print("creating generator...")
         self.netG = Generator_Adain_Upsample(input_nc=3, output_nc=3, latent_size=512, n_blocks=9, deep=opt.Gdeep, transf=opt.transf)
+        
+        print("generator moving to cuda...")
         self.netG.cuda(int(opt.gpu_ids[0]))
         # wandb.watch(self.netG )
         print('================  Generator Architecture ================')
@@ -77,11 +99,11 @@ class fsModel(BaseModel):
 
             # optimizer G
             params = list(self.netG.parameters())
-            self.optimizer_G = torch.optim.Adam(params, lr=opt.lr, betas=(opt.beta1, 0.99),eps=1e-8)
+            self.optimizer_G = torch.optim.AdamW(params, lr=opt.lr, betas=(opt.beta1, 0.99),eps=1e-8)
 
             # optimizer D
             params = list(self.netD.parameters())
-            self.optimizer_D = torch.optim.Adam(params, lr=opt.lr, betas=(opt.beta1, 0.99),eps=1e-8)
+            self.optimizer_D = torch.optim.AdamW(params, lr=opt.lr, betas=(opt.beta1, 0.99),eps=1e-8)
             # self.scheduler = torch.optim.MultiStepLR(self.optimizer_G, milestones=[1000,10000], gamma=0.5)
         # load networks
         if opt.continue_train:

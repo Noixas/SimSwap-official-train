@@ -16,10 +16,11 @@ import random
 import argparse
 import numpy as np
 
+from tqdm import tqdm
 import torch
 import torch.nn.functional as F
 from torch.backends import cudnn
-import torch.utils.tensorboard as tensorboard
+# import torch.utils.tensorboard as tensorboard
 
 from util import util
 from util.plot import plot_batch
@@ -44,6 +45,7 @@ class TrainOptions:
         self.parser.add_argument('--gpu_ids', default='0')
         self.parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='models are saved here')
         self.parser.add_argument('--isTrain', type=str2bool, default='True')
+        self.parser.add_argument("--seed", type=int, default=1234, help='Seed')
 
         # input/output sizes       
         self.parser.add_argument('--batchSize', type=int, default=4, help='input batch size')       
@@ -110,10 +112,32 @@ class TrainOptions:
                     opt_file.write('-------------- End ----------------\n')
         return self.opt
 
+# def 
 
-if __name__ == '__main__':
+class CosineWarmupScheduler(torch.optim.lr_scheduler._LRScheduler):
 
-    opt         = TrainOptions().parse()
+    def __init__(self, optimizer, warmup, max_iters):
+        self.warmup = warmup
+        self.max_num_iters = max_iters
+        super().__init__(optimizer)
+
+    def get_lr(self):
+        lr_factor = self.get_lr_factor(epoch=self.last_epoch)
+        return [base_lr * lr_factor for base_lr in self.base_lrs]
+
+    def get_lr_factor(self, epoch):
+        lr_factor = 0.5 * (1 + np.cos(np.pi * epoch / self.max_num_iters))
+        if epoch <= self.warmup:
+            lr_factor *= epoch * 1.0 / self.warmup
+        return lr_factor
+      
+def train(opt):
+    torch.manual_seed(opt.seed)
+    random.seed(opt.seed)
+    torch.cuda.manual_seed(opt.seed)
+    np.random.seed(opt.seed)
+
+
     wandb.init(project="master-thesis",entity='ir2',save_code=True,tags=["transformer"],notes=opt.name + ' ' + opt.notes)
     # opt = TrainOptions().parse()
     wandb.config.update(opt)
@@ -167,14 +191,16 @@ if __name__ == '__main__':
         log_file.write('================ Training Loss (%s) ================\n' % now)
 
     optimizer_G, optimizer_D = model.optimizer_G, model.optimizer_D
+    # lr_scheduler_G = CosineWarmupScheduler(optimizer=optimizer_G, warmup=100, max_iters=200000)
+    # lr_scheduler_D = CosineWarmupScheduler(optimizer=optimizer_D, warmup=100, max_iters=200000)
 
     loss_avg        = 0
     refresh_count   = 0
     imagenet_std    = torch.Tensor([0.229, 0.224, 0.225]).view(3,1,1)
     imagenet_mean   = torch.Tensor([0.485, 0.456, 0.406]).view(3,1,1)
 
-    train_loader    = GetLoader(opt.dataset,opt.batchSize,8,1234)
-
+    train_loader    = GetLoader(opt.dataset,opt.batchSize,dataloader_workers=8,random_seed=opt.seed)
+    print("DATALOADER CREATED")
     randindex = [i for i in range(opt.batchSize)]
     random.shuffle(randindex)
 
@@ -189,7 +215,7 @@ if __name__ == '__main__':
     from util.logo_class import logo_class
     logo_class.print_start_training()
     model.netD.feature_network.requires_grad_(False)
-
+    # print('Startttt')
     # Training Cycle
     # Per each step
         # Do 2 passes:
@@ -206,7 +232,8 @@ if __name__ == '__main__':
                 #Update generator
 
     cache_rec = 50          
-    for step in range(start, total_step):
+    for step in tqdm(range(start, total_step)):
+        # print(step)
         # print("=========Start of step %i train======="%step )
         # if step >=1000 and cache_rec < 0.10 and opt.lambda_rec != opt.lambda_id:
         #     print("========= Step %i, changing lambda_rec ======="%step)
@@ -220,8 +247,10 @@ if __name__ == '__main__':
         for interval in range(range_amount):
             # print("---Interval:", interval)
             random.shuffle(randindex)
+            # print('shuffle')
             src_image1, src_image2  = train_loader.next()
             # print("step%2==", step%2)
+            # print('next')
             if step%2 == 0:
                 img_id = src_image2
             elif opt.disable_faceswap == False :
@@ -242,6 +271,7 @@ if __name__ == '__main__':
                 loss_D          = loss_Dgen + loss_Dreal
                 optimizer_D.zero_grad()
                 loss_D.backward()
+                # lr_scheduler_D.step()
                 optimizer_D.step()
                 if disable_gan:
                     print("We should be skiping this step if gan is diabled")
@@ -294,6 +324,8 @@ if __name__ == '__main__':
                 optimizer_G.zero_grad()
                 loss_G.backward()
                 optimizer_G.step()
+                # lr_scheduler_G.step()
+
         # print("=========END =======" )
 
         ############## Display results and errors ##########
@@ -367,16 +399,20 @@ if __name__ == '__main__':
                         imgs.append(img_fake[j,...])
                 print("Save test data")
                 imgs = np.stack(imgs, axis = 0).transpose(0,2,3,1)
-                # images_output_wandb = wandb.Image(imgs, caption="Output images")         
-                # wandb.log({"images_sample": images_output_wandb})
+                
                 plot_batch(imgs, os.path.join(sample_path, 'step_'+str(step+1)+'.jpg'),step)
 
         ### save latest model
         if (step+1) % opt.model_freq==0:
             print('saving the latest model (steps %d)' % (step+1))
             model.save(step+1)            
-            np.savetxt(iter_path, (step+1, total_step), delimiter=',', fmt='%d')
-    wandb.finish()
+            np.savetxt(iter_path, (step+1, total_step), delimiter=',', fmt='%d')   
+
+if __name__ == '__main__':
+
+    opt         = TrainOptions().parse()
+    train(opt)
+    # wandb.finish()
 
 # python train.py --name simswap224_test --batchSize 16  --gpu_ids 0 --dataset ../vggface2_crop_arcfacealign_224 --Gdeep False 
 # python train.py --name simswap224_test --batchSize 16  --gpu_ids 0 --dataset /home/astro/Documents/UvA/Thesis/vggface2_crop_arcfacealign_224 --Gdeep False  #SSD!!
@@ -393,3 +429,16 @@ if __name__ == '__main__':
 
 #continue training swinswap
 # python train.py --name transf_08_imswap224 --batchSize 16 --gpu_ids 0 --dataset /home/astro/Documents/UvA/Thesis/vggface2_crop_arcfacealign_224 --Gdeep False --transf True --which_epoch 230000 --continue_train True --load_pretrain ./checkpoints/transf_08_imswap224
+
+
+
+#WINDOWS
+# # python train.py --name exp_temp_rtx3090_swinTswap224_debugging --batchSize 16 --gpu_ids 0 --dataset "C://Users/rodri/Master_thesis_data/vggface2_crop_arcfacealign_224" --Gdeep False --transf True --lambda_id 30 --lambda_feat 10 --lambda_rec 10 --notes "SwinT pretrained with Bottle neck and pixelshuffle but we train with big lambda_rec, which changes after reaching good rec. GAN ENABLED, stage 1 with blocks [2,8] and head [4,8] patches size 28x28 and 512 emb outp. ADAIN SWIN, lower rec lambda " --disable_gan False --disable_faceswap False --print_stats True --lr 0.0001
+
+# python train.py --name exp_temp_rtx3090_swinTswap224_debugging --batchSize 16 --gpu_ids 0 --dataset "/mnt/c/Users/rodri/Master_thesis_data/vggface2_crop_arcfacealign_224" --Gdeep False --transf True --lambda_id 30 --lambda_feat 10 --lambda_rec 10 --notes "SwinT pretrained with Bottle neck and pixelshuffle but we train with big lambda_rec, which changes after reaching good rec. GAN ENABLED, stage 1 with blocks [2,8] and head [4,8] patches size 28x28 and 512 emb outp. ADAIN SWIN, lower rec lambda " --disable_gan False --disable_faceswap False --print_stats True --lr 0.0001
+# /mnt/h/Master_Thesis/Official Train/SimSwap-official-train
+# conda activate simswap_train
+# torch.cuda.is_available()
+
+
+# train.py --name exp_temp_rtx3090_swinTswap224_debugging --batchSize 16 --gpu_ids 0 --dataset "C:\Users\rodri\Master_thesis_data\vggface2_crop_arcfacealign_224" --Gdeep False --transf True --lambda_id 30 --lambda_feat 10 --lambda_rec 10 --notes "SwinT pretrained with Bottle neck and pixelshuffle but we train with big lambda_rec, which changes after reaching good rec. GAN ENABLED, stage 1 with blocks [2,8] and head [4,8] patches size 28x28 and 512 emb outp. ADAIN SWIN, lower rec lambda " --disable_gan False --disable_faceswap False --print_stats True --lr 0.0001

@@ -5,7 +5,7 @@ import random
 from PIL import Image
 from torch.utils import data
 from torchvision import transforms as T
-
+import numpy as np
 class data_prefetcher():
     def __init__(self, loader):
         self.loader = loader
@@ -102,7 +102,7 @@ def GetLoader(  dataset_roots,
     """Build and return a data loader."""
         
     num_workers         = dataloader_workers
-    data_root           = dataset_roots
+    data_root           = dataset_roots 
     random_seed         = random_seed
     
     c_transforms = []
@@ -115,8 +115,20 @@ def GetLoader(  dataset_roots,
                             c_transforms,
                             "jpg",
                             random_seed)
-    content_data_loader = data.DataLoader(dataset=content_dataset,batch_size=batch_size,
-                    drop_last=True,shuffle=True,num_workers=num_workers,pin_memory=True)
+    
+    def seed_worker(worker_id):
+        worker_seed = torch.initial_seed() % 2**32
+        np.random.seed(worker_seed)
+        random.seed(worker_seed)
+    g = torch.Generator()
+    g.manual_seed(random_seed)
+    # print(len(content_dataset))
+    # random_sampler =torch.utils.data.RandomSampler(content_dataset, replacement=False, num_samples=len(content_dataset), generator=g)
+    # content_data_loader = data.DataLoader(dataset=content_dataset,batch_size=batch_size, worker_init_fn=seed_worker,
+    #                 drop_last=True,num_workers=0,sampler=random_sampler, pin_memory=True,generator=g)  
+    # random_sampler =torch.utils.data.RandomSampler(content_dataset, replacement=False, num_samples=None, generator=None)
+    content_data_loader = data.DataLoader(dataset=content_dataset,batch_size=batch_size, worker_init_fn=seed_worker,
+                    drop_last=True,shuffle=True,num_workers=16, pin_memory=True,generator=g)
     prefetcher = data_prefetcher(content_data_loader)
     return prefetcher
 
