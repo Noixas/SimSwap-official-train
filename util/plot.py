@@ -34,8 +34,18 @@ def plot_batch(X, out_path,step):
     rows = cols = math.ceil(rc)
     canvas = tile(X, rows, cols)
     canvas = np.squeeze(canvas)
-    PIL.Image.fromarray(canvas).save(out_path)
-    images_output_wandb = wandb.Image(canvas, caption="Output images")      
+    pil_img = PIL.Image.fromarray(canvas)
+    pil_img_draw = ImageDraw.Draw(pil_img) 
+    # Custom font style and font size
+    myFont = ImageFont.truetype('./fonts/Roboto/Roboto-Thin.ttf', 25)
+    
+    # Add Text to an image
+    pil_img_draw.text((10, 10),'Wandb info:\n'+ wandb.run.name+'\n'+wandb.run.id+'\nStep: '+str(step), font=myFont, fill =(255, 255, 255))
+    pil_img.save(out_path)
+    images_output_wandb = wandb.Image(pil_img, caption="Output images")      
     wandb.log({"images_sample": images_output_wandb},step=step)
 
 import wandb
+
+from PIL import ImageDraw
+from PIL import ImageFont

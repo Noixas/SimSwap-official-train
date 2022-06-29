@@ -43,7 +43,7 @@ class fsModel(BaseModel):
         torch.cuda.set_device(int(opt.gpu_ids[0]))
         # Generator network
         print("creating generator...")
-        self.netG = Generator_Adain_Upsample(input_nc=3, output_nc=3, latent_size=512, n_blocks=9, deep=opt.Gdeep, transf=opt.transf
+        self.netG = Generator_Adain_Upsample(input_nc=3, output_nc=3, latent_size=512, n_blocks=9, deep=opt.Gdeep, transf=opt.transf,
                                             transf_window_size=opt.window_size, 
                                             transf_embed_dim=opt.transf_embed_dim, 
                                             transf_mlp_ratio=opt.mlp_ratio, 

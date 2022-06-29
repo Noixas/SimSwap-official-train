@@ -84,11 +84,11 @@ class TrainOptions:
         self.parser.add_argument('--print_stats', type=str2bool, default='False')
         self.parser.add_argument('--warmup_steps', type=int, default=5)
         #tranformer settings
-        self.parser.add_argument('--depth', nargs="+", type=int, default= [2,6])
-        self.parser.add_argument('--heads', nargs="+", type=int, default= [4,4])
-        self.parser.add_argument('--mlp_ratio', type=int, default= 4)
-        self.parser.add_argument('--window_size',  type=int, default= 7)
-        self.parser.add_argument('--transf_embed_dim',  type=int, default= 128)
+        self.parser.add_argument('--depth', nargs="+", type=int, default= [2,6]) #swin uses [2,2,6,2]
+        self.parser.add_argument('--heads', nargs="+", type=int, default= [4,4])#swin uses other [?,?,?,?]
+        self.parser.add_argument('--mlp_ratio', type=int, default= 2) #swin uses 4
+        self.parser.add_argument('--window_size',  type=int, default= 4) #swin uses 7
+        self.parser.add_argument('--transf_embed_dim',  type=int, default= 256) #swin uses 128
         
 
 
@@ -144,13 +144,9 @@ def train(opt):
     torch.manual_seed(opt.seed)
     random.seed(opt.seed)
     torch.cuda.manual_seed(opt.seed)
-    np.random.seed(opt.seed)
-
-
-    wandb.init(project="master-thesis",entity='ir2',save_code=True,tags=["transformer"],notes=opt.name + ' ' + opt.notes)
-    # opt = TrainOptions().parse()
-    wandb.config.update(opt)
+    np.random.seed(opt.seed)    
     opt.name += "-"+wandb.run.name
+    wandb.config.update(opt)
 
     iter_path   = os.path.join(opt.checkpoints_dir, opt.name, 'iter.txt')
 
@@ -200,11 +196,11 @@ def train(opt):
         log_file.write('================ Training Loss (%s) ================\n' % now)
 
     optimizer_G, optimizer_D = model.optimizer_G, model.optimizer_D
-    lr_scheduler_G = CosineWarmupScheduler(optimizer=optimizer_G, warmup=opt.warmup_steps, max_iters=1000000)
-    lr_scheduler_D = CosineWarmupScheduler(optimizer=optimizer_D, warmup=opt.warmup_steps, max_iters=1000000)
-
-    loss_avg        = 0
-    refresh_count   = 0
+    max_iter_cos_scehduler =1000000 # unlikely to go pass this since it would take more than 10 days of training in Rtx3090 so hardcoded
+    lr_scheduler_G = CosineWarmupScheduler(optimizer=optimizer_G, warmup=opt.warmup_steps, max_iters=max_iter_cos_scehduler)
+    lr_scheduler_D = CosineWarmupScheduler(optimizer=optimizer_D, warmup=opt.warmup_steps, max_iters=max_iter_cos_scehduler)
+    print("Using CosineWarmupScheduler with %d warmup steps and max %d steps"%(opt.warmup_steps,max_iter_cos_scehduler))
+    
     imagenet_std    = torch.Tensor([0.229, 0.224, 0.225]).view(3,1,1)
     imagenet_mean   = torch.Tensor([0.485, 0.456, 0.406]).view(3,1,1)
 
@@ -406,10 +402,12 @@ def train(opt):
                     img_fake    = img_fake.numpy()
                     for j in range(opt.batchSize):
                         imgs.append(img_fake[j,...])
-                print("Save test data")
+                print("Saving evaluation data")
                 imgs = np.stack(imgs, axis = 0).transpose(0,2,3,1)
                 
                 plot_batch(imgs, os.path.join(sample_path, 'step_'+str(step+1)+'.jpg'),step)
+                print("Wandb run: "+wandb.run.get_url())
+
 
         ### save latest model
         if (step+1) % opt.model_freq==0:
@@ -420,8 +418,22 @@ def train(opt):
 if __name__ == '__main__':
 
     opt         = TrainOptions().parse()
-    train(opt)
-    # wandb.finish()
+    wandb.init(project="master-thesis",entity='ir2',save_code=True,tags=["transformer"],notes=opt.name + ' ' + opt.notes)
+    
+    wandb_path = wandb.run.path
+    wandb_url = wandb.run.get_url()
+    try:
+        train(opt)
+    except KeyboardInterrupt:
+        wandb.finish()
+        print('Type Del to delete run...')
+        inp =input()
+        if inp == 'Del':
+            print('Deleting Run from Wandb but still available locally. Run wandb path: '+wandb_path)
+            print(wandb_url)
+            api = wandb.Api()
+            run = api.run(wandb_path)
+            run.delete()
 
 # python train.py --name simswap224_test --batchSize 16  --gpu_ids 0 --dataset ../vggface2_crop_arcfacealign_224 --Gdeep False 
 # python train.py --name simswap224_test --batchSize 16  --gpu_ids 0 --dataset /home/astro/Documents/UvA/Thesis/vggface2_crop_arcfacealign_224 --Gdeep False  #SSD!!
