@@ -1,0 +1,11 @@
+name: simswap_linux
+channels:
+  - defaults
+dependencies:
+  - python=3.8
+  - cudatoolkit=11.3
+  - torchvision
+  - pytorch
+  - torchaudio
+  - ipykernel
+prefix: /home/astro/anaconda3/envs/simswap_linux
