@@ -82,6 +82,14 @@ class TrainOptions:
         self.parser.add_argument('--disable_gan', type=str2bool, default='False')
         self.parser.add_argument('--disable_faceswap', type=str2bool, default='False')
         self.parser.add_argument('--print_stats', type=str2bool, default='False')
+        self.parser.add_argument('--warmup_steps', type=int, default=5)
+        #tranformer settings
+        self.parser.add_argument('--depth', nargs="+", type=int, default= [2,6])
+        self.parser.add_argument('--heads', nargs="+", type=int, default= [4,4])
+        self.parser.add_argument('--mlp_ratio', type=int, default= 4)
+        self.parser.add_argument('--window_size',  type=int, default= 7)
+        self.parser.add_argument('--transf_embed_dim',  type=int, default= 128)
+        
 
 
         self.isTrain = True
@@ -90,6 +98,7 @@ class TrainOptions:
         if not self.initialized:
             self.initialize()
         self.opt = self.parser.parse_args()
+        assert len(self.opt.depth) == len(self.opt.heads), "Amount of stages for heads and depth of transformer are not the same"
         self.opt.isTrain = self.isTrain   # train or test
 
         args = vars(self.opt)
@@ -191,8 +200,8 @@ def train(opt):
         log_file.write('================ Training Loss (%s) ================\n' % now)
 
     optimizer_G, optimizer_D = model.optimizer_G, model.optimizer_D
-    # lr_scheduler_G = CosineWarmupScheduler(optimizer=optimizer_G, warmup=100, max_iters=200000)
-    # lr_scheduler_D = CosineWarmupScheduler(optimizer=optimizer_D, warmup=100, max_iters=200000)
+    lr_scheduler_G = CosineWarmupScheduler(optimizer=optimizer_G, warmup=opt.warmup_steps, max_iters=1000000)
+    lr_scheduler_D = CosineWarmupScheduler(optimizer=optimizer_D, warmup=opt.warmup_steps, max_iters=1000000)
 
     loss_avg        = 0
     refresh_count   = 0
@@ -271,7 +280,7 @@ def train(opt):
                 loss_D          = loss_Dgen + loss_Dreal
                 optimizer_D.zero_grad()
                 loss_D.backward()
-                # lr_scheduler_D.step()
+                lr_scheduler_D.step()
                 optimizer_D.step()
                 if disable_gan:
                     print("We should be skiping this step if gan is diabled")
@@ -324,7 +333,7 @@ def train(opt):
                 optimizer_G.zero_grad()
                 loss_G.backward()
                 optimizer_G.step()
-                # lr_scheduler_G.step()
+                lr_scheduler_G.step()
 
         # print("=========END =======" )
 

@@ -215,7 +215,13 @@ class Generator_Adain_Upsample(nn.Module):
     def __init__(self, input_nc, output_nc, latent_size, n_blocks=6, deep=False,
                  norm_layer=nn.BatchNorm2d,
                  padding_type='reflect',
-                 transf=False):
+                 transf=False,
+                 transf_window_size=4, 
+                 transf_embed_dim=256, 
+                 transf_mlp_ratio=2, 
+                 transf_depths=[ 2,6],
+                 transf_num_heads= [ 4, 4]):
+
         assert (n_blocks >= 0)
         super(Generator_Adain_Upsample, self).__init__()
         wandb.run.log_code(".")
@@ -228,7 +234,7 @@ class Generator_Adain_Upsample(nn.Module):
         self.transf_AdaIN = True
         if self.transf_AdaIN ==True:
             # self.swin_model = SwinTransformerAdaIN(embed_dim=256, depths=[ 2,2,6],num_heads= [ 4, 8,8]) # Similar to: "microsoft/swin-tiny-patch4-window7-224") #output after forward[B,49,768]
-            self.swin_model = SwinTransformerAdaIN(window_size=4, embed_dim=256, mlp_ratio=2, depths=[ 2,2],num_heads= [ 4, 4]) # Similar to: "microsoft/swin-tiny-patch4-window7-224") #output after forward[B,49,768]
+            self.swin_model = SwinTransformerAdaIN(window_size=transf_window_size, embed_dim=transf_embed_dim, mlp_ratio=transf_mlp_ratio, depths=transf_depths,num_heads=transf_num_heads) # Similar to: "microsoft/swin-tiny-patch4-window7-224") #output after forward[B,49,768]
             # scale = 8 #16
             # self.last_layer = nn.Sequential( nn.BatchNorm2d(512), activation, nn.Conv2d(512, scale**2*3, kernel_size=1) ,nn.PixelShuffle(scale)) # When using hidden_state 2
             # self.last_layer = nn.Sequential( nn.Conv2d(1024, scale**2*3, kernel_size=1) ,nn.PixelShuffle(scale)) # When using hidden_state 2

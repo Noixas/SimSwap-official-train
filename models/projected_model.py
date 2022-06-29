@@ -19,25 +19,7 @@ from .base_model import BaseModel
 from .fs_networks_transformer import Generator_Adain_Upsample
 
 from pg_modules.projected_discriminator import ProjectedDiscriminator
-import numpy as np
-
-class CosineWarmupScheduler(torch.optim.lr_scheduler._LRScheduler):
-
-    def __init__(self, optimizer, warmup, max_iters):
-        self.warmup = warmup
-        self.max_num_iters = max_iters
-        super().__init__(optimizer)
-
-    def get_lr(self):
-        lr_factor = self.get_lr_factor(epoch=self.last_epoch)
-        return [base_lr * lr_factor for base_lr in self.base_lrs]
-
-    def get_lr_factor(self, epoch):
-        lr_factor = 0.5 * (1 + np.cos(np.pi * epoch / self.max_num_iters))
-        if epoch <= self.warmup:
-            lr_factor *= epoch * 1.0 / self.warmup
-        return lr_factor
-        
+  
 def compute_grad2(d_out, x_in):
     batch_size = x_in.size(0)
     grad_dout = torch.autograd.grad(
@@ -61,7 +43,12 @@ class fsModel(BaseModel):
         torch.cuda.set_device(int(opt.gpu_ids[0]))
         # Generator network
         print("creating generator...")
-        self.netG = Generator_Adain_Upsample(input_nc=3, output_nc=3, latent_size=512, n_blocks=9, deep=opt.Gdeep, transf=opt.transf)
+        self.netG = Generator_Adain_Upsample(input_nc=3, output_nc=3, latent_size=512, n_blocks=9, deep=opt.Gdeep, transf=opt.transf
+                                            transf_window_size=opt.window_size, 
+                                            transf_embed_dim=opt.transf_embed_dim, 
+                                            transf_mlp_ratio=opt.mlp_ratio, 
+                                            transf_depths=opt.depth,
+                                            transf_num_heads=opt.heads)
         
         print("generator moving to cuda...")
         self.netG.cuda(int(opt.gpu_ids[0]))
