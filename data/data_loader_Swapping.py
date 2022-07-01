@@ -68,16 +68,19 @@ class SwappingDataset(data.Dataset):
         temp_path   = os.path.join(self.image_dir,'*/')
         pathes      = glob.glob(temp_path)
         self.dataset = []
+        img_count = 0
         for dir_item in pathes:
             join_path = glob.glob(os.path.join(dir_item,'*.jpg'))
             print("processing %s"%dir_item,end='\r')
             temp_list = []
             for item in join_path:
                 temp_list.append(item)
+                img_count += 1
             self.dataset.append(temp_list)
         random.seed(self.random_seed)
         random.shuffle(self.dataset)
         print('Finished preprocessing the Swapping dataset, total dirs number: %d...'%len(self.dataset))
+        print('Total number of images is ',img_count)
              
     def __getitem__(self, index):
         """Return two src domain images and two dst domain images."""

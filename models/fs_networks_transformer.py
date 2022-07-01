@@ -524,8 +524,6 @@ class Generator_Adain_Upsample(nn.Module):
             
             # last_hidden_state = swin_output.hidden_states[1] #[B, 49, 768] 49 since image was split in 7x7 regions and each region has an emb of 768 dim
             last_hidden_state = swin_output #[B, 49, 768] 49 since image was split in 7x7 regions and each region has an emb of 768 dim
-            # print(last_hidden_state.shape)
-            # print(last_hidden_state.shape)
             last_hidden_states = last_hidden_state.transpose(1, 2) #[B, 768, 49])   
             batch_size, num_channels, sequence_length = last_hidden_states.shape
             height = width = int(sequence_length**0.5) #7

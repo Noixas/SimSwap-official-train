@@ -268,8 +268,8 @@ class SwinTransformerBlock(nn.Module):
             attn_mask = None
             ###############         AdaIN         ##############
             self.insNorm1 = InstanceNorm()
-            self.insNorm2 = InstanceNorm()
             self.style1 = ApplyStyle(id_latent_size, dim)
+            self.insNorm2 = InstanceNorm()
             self.style2 = ApplyStyle(id_latent_size, dim)
 
 
